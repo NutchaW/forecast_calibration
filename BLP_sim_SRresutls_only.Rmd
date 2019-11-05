@@ -1,0 +1,637 @@
+---
+title: "BLP Simulation Studies"
+author: "Nutcha Wattanachit"
+date: "9/12/2019"
+header-includes:
+   - \usepackage{booktabs}
+   - \usepackage{tabularx}
+   - \usepackage{hyperref}
+   - \usepackage{multicol}
+   - \usepackage{longtable}
+   - \usepackage{array}
+   - \usepackage{multirow}
+   - \usepackage{wrapfig}
+   - \usepackage{float}
+   - \usepackage{colortbl}
+   - \usepackage{pdflscape}
+   - \usepackage{tabu}
+   - \usepackage{threeparttable}
+   - \usepackage{threeparttablex}
+   - \usepackage{makecell}
+   - \usepackage{xcolor}
+output:
+  pdf_document:
+        keep_tex: true
+        latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+library("pipeR");library("dplyr");library("cdcfluview")
+library(fGarch);library(Matrix)
+library(quantreg);library(tidyverse);library(cowplot)
+library(data.table);library(reshape2);library(gridExtra)
+library(rmutil);library(ranger)
+library(xgboost);library(splines);library(ggplot2)
+library(xtable);library(here)
+library(stats);library(mixtools);library(cowplot)
+library(ggforce);library(grid);library(FluSight)
+library(rmutil);library(here);library(stats)
+library(mixtools);library(knitr);library(kableExtra)
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, comment = FALSE, message=FALSE, fig.show= 'hold',
+                      table.placement='H')
+options(kableExtra.latex.load_packages = FALSE)
+```
+
+# Ensemble/pooling Methods
+
+## TLP
+
+Traditional linear pool finds optimal weights that maximmizes the likelihood of $f(y)=\sum_{i=1}^k w_if_i(y)$.
+
+## SLP
+
+Spread-adjusted linear pool finds optimal weights and a constant that maximize the likelihood of 
+
+$$
+g_{c}(y)=\frac{1}{c}\sum_{i=1}^k w_i f_i^0\Big(\frac{y-\mu_i}{c}\Big).
+$$
+
+## BLP
+
+BLP finds $\alpha$, $\beta$, and weights that maximize the likelihood of 
+
+$g_{\alpha,\beta}=(\sum_{i=1}^k w_if_i(y))b_{\alpha,\beta}(\sum_{i=1}^k w_iF_i(y)).$. The CDF is given by
+$B_{\alpha,\beta}(\sum_{i=1}^k w_iF_i(y))$.
+
+
+## Component-wise SLP
+
+This is the extension of a traditional SLP. The component-wise SLP find constants and weights that maximize the likelihood of $g_{c}(y)=\sum_{i=1}^k \frac{1}{c_i}w_if_i^0 \Big(\frac{y-\mu_i}{c_i}\Big)$.
+
+## Component-wise BLP
+
+This is the extension of the traditional BLP. We beta-transform each of the cumulative distribution functions of the component models. This is done by finding $\alpha$ and $\beta$ that maximize the likelihood of 
+
+$$
+\begin{aligned}
+G_{i,\alpha_i,\beta_i} &= B_{\alpha_i,\beta_i}[F_i(y)]\\
+g_{i,\alpha_i,\beta_i} &= f_i(y) \times b_{\alpha_i,\beta_i}[F_i(y)]
+\end{aligned}
+$$
+
+Then, to obtain $\alpha$, $\beta$, and the weights for 21 models, we apply BLP on the beta-transformed components: 
+
+$$
+\begin{aligned}
+G_{\alpha,\beta} &= B_{\alpha,\beta}\Big[\sum_{i=1}^k w_iB_{\alpha_i,\beta_i}(F_i(y))\Big]\\
+g_{\alpha,\beta} &= \Big(\sum_{i=1}^k w_ib_{i,\alpha_i,\beta_i}(F_i(y))f_i(y)  \Big)b_{\alpha,\beta} \Big(\sum_{i=1}^k w_iB_{i,\alpha_i,\beta_i}(F_i(y))\Big)
+\end{aligned}
+$$
+
+# Simulation studies
+
+The data generating process for the observation $Y$ in the regression model is 
+
+$$
+Y=X_0+a_1X_1+a_2X_2+a_3X_3+\epsilon,
+$$
+
+where $a_1,a_2,$ and $a_3$ are real constants that vary across different simulation studies, and $X_0,X_1,X_2,X_3,$ and $\epsilon$ are independent, standard normal random variables. The individual predictive densities have partial access of the above set of covariates. $f_1$ has access to only $X_0$ and $X_1$, $f_2$ has access to only $X_0$ and $X_2$, and $f_3$ has access to only $X_0$ and $X_3$. We want to combine $f_1,f_2,$ and $f_3$ to predict $Y$. In this setup, $X_0$ represent shared information, while other covariates represent information unique to each individual model.
+
+We estimate the TLP, SLP, BLP, component-wise SLP, component-wise BLP combination formulas on a random sample ${(f_{1i} , f_{2i} , f_{3i}, Y_i) : i = 1,..., n}$ of size $n = 50,000$ and evaluate on an independent test sample of the same size. 
+
+Extra note on simulation process: I think Y is fixed and the X's are fixed, but the $f_1,f_2,f_3$ themeselves are not fixed. There are 100,000 of means and variances for each $f_1,f_2,f_3$ (X's and constants are part of means and variances). We simulate inside the wrapper functions in the simumation function file, so you can take a look there for clarity.
+
+## Scenario 1: calibrated components (the exact same setup as in the Gneiting paper).
+
+In this scenario, $a_1 = a_2 = 1$ and $a_3 = 1.1$, so that $f_3$ is a more concentrated, sharper density forecast than $f_1$ and $f_2$ (Gneiting and Ranjan (2013)) and they are defined as follows:
+
+$$
+\begin{aligned}
+f_1&=\text{N}(X_0+a_1X_1,1+a^2_2+a^2_3)\\
+f_2&=\text{N}(X_0+a_2X_2,1+a^2_1+a^2_3)\\
+f_3&=\text{N}(X_0+a_3X_3,1+a^2_1+a^2_2)\\
+\end{aligned}
+$$
+
+For all pooling/ensemble methods, the weight estimate in Table 1 is highest for $f_3$, while the estimates for $f_1$ and $f_2$ are smaller and not significantly different from each other. The log scores and variance of BLP and component-wise BLP are the lowest among all methods and are about the same in Table 2.
+
+```{r, include=FALSE,cache=FALSE}
+source("./new_simBLP.R")
+set.seed(123)
+# -----------Scenario 0: Simulation setup -----------------------#
+n <- 1e5
+
+coefs <- c(a0 = 1, a1 = 1, a2 = 1, a3 = 1.1)
+vars  <- matrix(rnorm(n = n*4), nrow = n, dimnames = list(NULL, c("x0", "x1", "x2", "x3")))
+
+Y       <- vars %*% coefs + rnorm(n = n)
+
+means0 <- sds0 <- matrix(NA, nrow = length(Y), ncol = 3)
+
+for(i in 1:ncol(means0)){
+  ind <- 1:4 %in% c(1, i+1)
+  means0[,i]  <- vars[, ind] %*% coefs[ind]
+  sds0[,i]    <- sqrt(1 + sum(coefs[!ind]^2))
+}
+
+forecast_names <- c("f1", "f2", "f3", "TLP", "SLP", "BLP")
+
+ind_est <- c(rep(TRUE, n/2), rep(FALSE, n/2))
+
+# TLP (Traditional linear pool) combination -----------------------------------
+# Simple linear combination of forecasts
+weights_TLP0<-get_TLPpars(means0,sds0)
+round(weights_TLP0, 3)
+
+# SLP (Spread-adjusted linear pool) combination -------------------------------
+par_SLP0<-get_SLPpars(means0,sds0)
+weights_SLP0<-par_SLP0[-1]
+con0<-par_SLP0[1]
+round(weights_SLP0, 3)
+round(con0, 3)
+
+# component-specific SLP (Spread-adjusted linear pool) combination -------------------------------
+par_indSLP0<-get_indSLPpars(means0,sds0)
+weights_indSLP0<-par_SLP0[-c(1:3)]
+ind_con0<-par_indSLP0[c(1:3)]
+round(weights_indSLP0, 3)
+round(ind_con0, 3)
+
+# BLP (Beta-transformed linear pool) combination ------------------------------
+par_BLP0<-get_BLPpars(means0,sds0)
+weights_BLP0<-par_BLP0[-c(1:2)]
+ab0<-par_BLP0[c(1:2)]
+round(weights_BLP0, 3)
+round(ab0, 3)
+
+
+# component-specific BLP (Beta-transformed linear pool) combination ------------------------------
+comp_bpars0<-matrix(NA,ncol=2,nrow=3)
+for(i in 1:3){
+  ab0<-get_indBLPpars(means0,sds0,i)
+  comp_bpars0[i,1]<-ab0[1]
+  comp_bpars0[i,2]<-ab0[2]
+}
+round(comp_bpars0, 3)
+
+# BLP components in BLP
+par_BBLP0<-get_BBLPpars(means0,sds0,comp_bpars0)
+weights_BBLP0<-par_BBLP0[-c(1:2)]
+abb0<-par_BBLP0[c(1:2)]
+round(weights_BBLP0, 3)
+round(abb0, 3)
+```
+
+```{r, include=FALSE}
+# Evaluation ------------------------------------------------------------------
+
+# Parameter values
+table0 <- matrix(NA, nrow = 8, ncol = 9, 
+                dimnames = list(c(forecast_names[4:6],"cSLP","beta-f1","beta-f2","beta-f3","cBLP"), 
+                                c("w1", "w2", "w3", "c", "alpha", "beta",
+                                  "c1","c2","c3")))
+table0[1,] <- c(weights_TLP0, rep(NA, 6))
+table0[2,] <- c(par_SLP0[-1], par_SLP0[1], rep(NA, 5))
+table0[3,] <- c(par_BLP0[-c(1,2)], NA, par_BLP0[1:2],rep(NA, 3))
+table0[4,] <- c(par_indSLP0[-c(1:3)],rep(NA, 3),par_indSLP0[1:3])
+table0[5,] <- c(rep(NA, 4),comp_bpars0[1,c(1:2)],rep(NA, 3))
+table0[6,] <- c(rep(NA, 4),comp_bpars0[2,c(1:2)],rep(NA, 3))
+table0[7,] <- c(rep(NA, 4),comp_bpars0[3,c(1:2)],rep(NA, 3))
+table0[8,] <- c(par_BBLP0[-c(1,2)], NA, par_BBLP0[1:2],rep(NA, 3))
+table0<-round(table0, 2)
+
+# var(PIT) 
+vPIT0 <- matrix(NA,nrow=11,ncol = 1)
+rownames(vPIT0) <- c(forecast_names,"cSLP","beta-f1","beta-f2","beta-f3","cBLP")
+colnames(vPIT0) <- c("Variance")
+
+for(i in 1:3) vPIT0[i] <- PIT_normal(Y = Y[!ind_est], mu = means0[!ind_est ,i], 
+                                    sd = sds0[!ind_est ,i], var = TRUE)
+vPIT0[4] <- wrapper_TLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+                       sds = sds0[!ind_est, ], weights = weights_TLP0, varPIT = TRUE)
+vPIT0[5] <- wrapper_SLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+                       sds = sds0[ind_est, ], pars = par_SLP0, varPIT = TRUE)
+vPIT0[6] <- wrapper_BLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+                       sds = sds0[!ind_est, ], pars = par_BLP0, varPIT = TRUE)
+vPIT0[7] <- wrapper_indSLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+                       sds = sds0[!ind_est, ], pars = par_indSLP0, varPIT = TRUE)
+for(i in 1:3) vPIT0[7+i] <- PIT_beta(Y = Y[!ind_est], mu = means0[!ind_est ,i], 
+                                     sd = sds0[!ind_est ,i],ab=comp_bpars0[i,c(1:2)], var = TRUE)
+vPIT0[11] <- wrapper_BBLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+                       sds = sds0[!ind_est, ], pars = par_BBLP0, cab=comp_bpars0, varPIT = TRUE)
+
+# # Mean log score
+# # # LS(f,y) = -log(f(y))
+mls0 <- matrix(NA, nrow = 11, ncol = 2,
+                dimnames = list(c(forecast_names,
+                                  "cSLP","beta-f1","beta-f2","beta-f3","cBLP"),
+                                c("Training", "Test")))
+ for(j in 1:2){
+   ind <- if(j == 1){ind_est}else{!ind_est}
+   for(i in 1:3) mls0[i, j]  <- mean(ll_normal(Y = Y[ind,], mu = means0[ind, i],
+                                               sd = sds0[ind, i]))
+   mls0[4, j] <- mean(wrapper_TLP(Y = Y[ind], means = means0[ind,],
+                                   sds = sds0[ind,], weights = weights_TLP0, eval = FALSE))
+   mls0[5, j] <- mean(wrapper_SLP(Y = Y[ind], means = means0[ind,],
+                                   sds = sds0[ind,], pars = par_SLP0, eval = FALSE))
+   mls0[6, j] <- mean(wrapper_BLP(Y = Y[ind], means = means0[ind,],
+                                   sds = sds0[ind,], pars = par_BLP0, eval = FALSE))
+   mls0[7, j] <- mean(wrapper_indSLP(Y = Y[ind], means = means0[ind,],
+                                    sds = sds0[ind,], pars = par_indSLP0, eval = FALSE))
+   for(i in 1:3) mls0[7+i, j]  <- mean(ll_beta(Y = Y[ind,], mu = means0[ind, i],
+                                               sd = sds0[ind, i], ab=comp_bpars0[i,]))
+   mls0[11, j] <- mean(wrapper_BBLP(Y = Y[ind], means = means0[ind,], sds = sds0[ind,],
+                                      pars = par_BBLP0,cab=comp_bpars0, eval = FALSE))
+}
+```
+
+
+```{r,fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+# PIT Histogramme
+
+# PITplot(0)
+par(mfrow = c(2,3))
+for(i in 1:3) PIT_normal(Y = Y[!ind_est], mu = means0[!ind_est ,i],
+                         sd = sds0[!ind_est ,i], plot = TRUE, name = i)
+wrapper_TLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+            sds = sds0[!ind_est, ], weights = weights_TLP0, plot = TRUE)
+wrapper_SLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+            sds = sds0[!ind_est, ], pars = par_SLP0, plot = TRUE)
+wrapper_BLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+            sds = sds0[!ind_est, ], pars = par_BLP0, plot = TRUE)
+wrapper_indSLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+            sds = sds0[!ind_est, ], pars = par_indSLP0, plot = TRUE)
+for(i in 1:3) PIT_beta(Y = Y[!ind_est], mu = means0[!ind_est ,i],
+                         sd = sds0[!ind_est ,i],ab=comp_bpars0[i,c(1:2)], plot = TRUE, name = i)
+wrapper_BBLP(Y = Y[!ind_est], means = means0[!ind_est, ],
+            sds = sds0[!ind_est, ], pars = par_BBLP0, cab=comp_bpars0, plot = TRUE)
+```
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap=""}
+# Overview over estimated parameters
+# NA's denote parameter that are not part of the corresponding model
+knitr::kable(table0, "latex", booktabs = T,caption="Model Parameters") %>%
+   kable_styling(latex_options = "striped")
+# Variance of PIT values
+vPIT0<-round(vPIT0, 3) 
+# # Mean log scores over the training and the test sample
+mls0<-round(mls0, 3)
+knitr::kable(list(vPIT0,mls0), "latex", booktabs = T,caption = "Variance of PITs and Log Score") %>%
+   kable_styling(latex_options = "striped")
+```
+
+\clearpage
+
+## Scenario 2 : One miscalibrated (mean-biased) component model 
+
+In this scenario, $a_1 = a_2 = 1$ and $a_3 = 1.1$, and we add $0.5$ to the mean of $f_2$ so that it is a mean-biased forecast. The models are still defined as follows (except from that $a_2$ is now negative):
+
+$$
+\begin{aligned}
+f_1&=\text{N}(X_0+a_1X_1,1+a^2_2+a^2_3)\\
+f_2&=\text{N}(X_0+a_2X_2+0.5,1+a^2_1+a^2_3)\\
+f_3&=\text{N}(X_0+a_3X_3,1+a^2_1+a^2_2)\\
+\end{aligned}
+$$
+
+For all pooling/ensemble methods, the weight estimate in Table 3 is highest for $f_3$ and $f_2$ has the weight of 0, but component-wise BLP gives less weight to $f_3$ compared to other methods. The BLP have slightly lower average log score than the component-wise BLP in Table 4.
+
+Extra note on mean-biasedness: this is based on the definition in Gneiting's Probabilistic forecasts, calibration and sharpness (2007). The mean-biased forecaster issues the probabilistic forecast $F_t = N(\mu_t+\tau_t, 1)$, where $\tau_t$ is either 1 or -1, with equal probabilities, and independent of $\mu_t$. Here the standard deviation is not 1 like in Gneiting paper, but the mean of $f_2$ is no longer zero and the U-shape PIT histogram indicates mean-biasedness (though U-shape is not by itself a sufficient condition for mean-biasedness).
+
+```{r,include=FALSE,cache=FALSE}
+#------------ Scenario 2: some models are overconfident, others underconfident? (edited)---------- 
+#
+#
+# Simulation setup ------------------------------------------------------------
+
+coefs2 <- c(a0 = 1, a1 = 1, a2 = 1, a3 = 1.1)
+means2 <- sds2 <- matrix(NA, nrow = length(Y), ncol = 3)
+
+for(i in 1:ncol(means2)){
+  ind <- 1:4 %in% c(1, i+1)
+  means2[,i]  <- (vars[, ind]) %*% coefs2[ind]
+  sds2[,i]    <- sqrt(1 + sum(coefs2[!ind]^2))
+}
+
+means2[,2]<- means2[,2]+sample(c(1,-1), n, replace=TRUE)
+
+# TLP (Traditional linear pool) combination -----------------------------------
+# Simple linear combination of forecasts
+weights_TLP2<-get_TLPpars(means2,sds2)
+round(weights_TLP2, 3)
+
+# SLP (Spread-adjusted linear pool) combination -------------------------------
+par_SLP2<-get_SLPpars(means2,sds2)
+weights_SLP2<-par_SLP2[-1]
+con2<-par_SLP2[1]
+round(weights_SLP2, 3)
+round(con2, 3)
+
+# component-specific SLP (Spread-adjusted linear pool) combination -------------------------------
+par_indSLP2<-get_indSLPpars(means2,sds2)
+weights_indSLP2<-par_SLP2[-c(1:3)]
+ind_con2<-par_indSLP2[c(1:3)]
+round(weights_indSLP2, 3)
+round(ind_con2, 3)
+
+# BLP (Beta-transformed linear pool) combination ------------------------------
+par_BLP2<-get_BLPpars(means2,sds2)
+weights_BLP2<-par_BLP2[-c(1:2)]
+ab2<-par_BLP2[c(1:2)]
+round(weights_BLP2, 3)
+round(ab2, 3)
+
+# component-specific BLP (Beta-transformed linear pool) combination ------------------------------
+comp_bpars2<-matrix(NA,ncol=2,nrow=3)
+for(i in 1:3){
+  ab2<-get_indBLPpars(means2,sds2,i)
+  comp_bpars2[i,1]<-ab2[1]
+  comp_bpars2[i,2]<-ab2[2]
+}
+round(comp_bpars2, 3)
+
+# BLP components in BLP
+par_BBLP2<-get_BBLPpars(means2,sds2,comp_bpars2)
+weights_BBLP2<-par_BBLP2[-c(1:2)]
+abb2<-par_BBLP2[c(1:2)]
+round(weights_BBLP2, 3)
+round(abb2, 3)
+```
+
+```{r, include=FALSE}
+# Evaluation ------------------------------------------------------------------
+
+# Parameter values
+table2 <- matrix(NA, nrow = 8, ncol = 9, 
+                dimnames = list(c(forecast_names[4:6],"cSLP","beta-f1","beta-f2","beta-f3","cBLP"), 
+                                c("w1", "w2", "w3", "c", "alpha", "beta",
+                                  "c1","c2","c3")))
+table2[1,] <- c(weights_TLP2, rep(NA, 6))
+table2[2,] <- c(par_SLP2[-1], par_SLP2[1], rep(NA, 5))
+table2[3,] <- c(par_BLP2[-c(1,2)], NA, par_BLP2[1:2],rep(NA, 3))
+table2[4,] <- c(par_indSLP2[-c(1:3)],rep(NA, 3),par_indSLP2[1:3])
+table2[5,] <- c(rep(NA, 4),comp_bpars2[1,c(1:2)],rep(NA, 3))
+table2[6,] <- c(rep(NA, 4),comp_bpars2[2,c(1:2)],rep(NA, 3))
+table2[7,] <- c(rep(NA, 4),comp_bpars2[3,c(1:2)],rep(NA, 3))
+table2[8,] <- c(par_BBLP2[-c(1,2)], NA, par_BBLP2[1:2],rep(NA, 3))
+table2<-round(table2, 2)
+
+# var(PIT) 
+
+vPIT2 <- matrix(NA,nrow=11,ncol = 1)
+rownames(vPIT2) <- c(forecast_names,"cSLP","beta-f1","beta-f2","beta-f3","cBLP")
+colnames(vPIT2) <- c("Variance")
+for(i in 1:3) vPIT2[i] <- PIT_normal(Y = Y[!ind_est], mu = means2[!ind_est ,i], 
+                                     sd = sds2[!ind_est ,i], var = TRUE)
+vPIT2[4] <- wrapper_TLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+                        sds = sds2[!ind_est, ], weights = weights_TLP2, varPIT = TRUE)
+vPIT2[5] <- wrapper_SLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+                        sds = sds2[ind_est, ], pars = par_SLP2, varPIT = TRUE)
+vPIT2[6] <- wrapper_BLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+                        sds = sds2[!ind_est, ], pars = par_BLP2, varPIT = TRUE)
+vPIT2[7] <- wrapper_indSLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+                           sds = sds2[!ind_est, ], pars = par_indSLP2, varPIT = TRUE)
+for(i in 1:3) vPIT2[7+i] <- PIT_beta(Y = Y[!ind_est], mu = means2[!ind_est ,i], 
+                                     sd = sds2[!ind_est ,i],ab=comp_bpars2[i,c(1:2)], var = TRUE)
+vPIT2[11] <- wrapper_BBLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+                          sds = sds2[!ind_est, ], pars = par_BBLP2, cab=comp_bpars2, varPIT = TRUE)
+
+# # Mean log score
+# # # LS(f,y) = -log(f(y))
+mls2 <- matrix(NA, nrow = 11, ncol = 2,
+                dimnames = list(c(forecast_names,
+                                  "cSLP","beta-f1","beta-f2","beta-f3","cBLP"),
+                                c("Training", "Test")))
+ for(j in 1:2){
+   ind <- if(j == 1){ind_est}else{!ind_est}
+   for(i in 1:3) mls2[i, j]  <- mean(ll_normal(Y = Y[ind,], mu = means2[ind, i],
+                                               sd = sds2[ind, i]))
+   mls2[4, j] <- mean(wrapper_TLP(Y = Y[ind], means = means2[ind,],
+                                   sds = sds2[ind,], weights = weights_TLP2, eval = FALSE))
+   mls2[5, j] <- mean(wrapper_SLP(Y = Y[ind], means = means2[ind,],
+                                   sds = sds2[ind,], pars = par_SLP2, eval = FALSE))
+   mls2[6, j] <- mean(wrapper_BLP(Y = Y[ind], means = means2[ind,],
+                                   sds = sds2[ind,], pars = par_BLP2, eval = FALSE))
+   mls2[7, j] <- mean(wrapper_indSLP(Y = Y[ind], means = means2[ind,],
+                                    sds = sds2[ind,], pars = par_indSLP2, eval = FALSE))
+   for(i in 1:3) mls2[7+i, j]  <- mean(ll_beta(Y = Y[ind,], mu = means2[ind, i],
+                                               sd = sds2[ind, i], ab=comp_bpars2[i,]))
+   mls2[11, j] <- mean(wrapper_BBLP(Y = Y[ind], means = means2[ind,], sds = sds2[ind,],
+                                      pars = par_BBLP2,cab=comp_bpars2, eval = FALSE))
+ }
+```
+
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+# PIT Histogramme
+# 
+par(mfrow = c(2,3))
+for(i in 1:3) PIT_normal(Y = Y[!ind_est], mu = means2[!ind_est ,i],
+                         sd = sds2[!ind_est ,i], plot = TRUE, name = i)
+wrapper_TLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+            sds = sds2[!ind_est, ], weights = weights_TLP2, plot = TRUE)
+wrapper_SLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+            sds = sds2[!ind_est, ], pars = par_SLP2, plot = TRUE)
+wrapper_BLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+            sds = sds2[!ind_est, ], pars = par_BLP2, plot = TRUE)
+wrapper_indSLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+               sds = sds2[!ind_est, ], pars = par_indSLP2, plot = TRUE)
+for(i in 1:3) PIT_beta(Y = Y[!ind_est], mu = means2[!ind_est ,i],
+                       sd = sds2[!ind_est ,i],ab=comp_bpars2[i,c(1:2)], plot = TRUE, name = i)
+wrapper_BBLP(Y = Y[!ind_est], means = means2[!ind_est, ],
+             sds = sds2[!ind_est, ], pars = par_BBLP2, cab=comp_bpars2, plot = TRUE)
+
+```
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap=""}
+# Overview over estimated parameters
+# NA's denote parameter that are not part of the corresponding model
+table2<-round(table2, 2)
+knitr::kable(table2, "latex", booktabs = T,caption="Model Parameters") %>%
+   kable_styling(latex_options = "striped")
+# Variance of PIT values
+# For calibrated forecasts at 1/12 (i.e. variance of U with U ~ U(0,1)
+# being standard uniform distributed)
+# 1/12 ~ 0.083
+
+vPIT2<-round(vPIT2, 3)
+
+# 
+# # Mean log scores over the training and the test sample
+mls2<-round(mls2, 3)
+knitr::kable(list(vPIT2,mls2), "latex", booktabs = T,caption = "Variance of PITs and Log Score") %>%
+   kable_styling(latex_options = "striped")
+```
+
+\clearpage
+
+## Scenario 3 One miscalibrated component
+
+In this scenario, $a_1 = a_2 = 1$ and $a_3 = 1.1$, but we modified the standard deviation of the first density forecast as follows:
+
+$$
+\begin{aligned}
+f_1&=\text{N}(X_0+a_1X_1,1.5+a^2_2+a^2_3)\\
+f_2&=\text{N}(X_0+a_2X_2,1+a^2_1+a^2_3)\\
+f_3&=\text{N}(X_0+a_3X_3,1+a^2_1+a^2_2)\\
+\end{aligned}
+$$
+
+The BLP's average log score is the lowest, and the component-wise BLP and component-wise SLP are the second lowest in Table 6.
+
+Extra note: Based on Ranjan and Gneiting's Combining predictive distributions (2013), hump/inverse U-shape PIT histogram and variance of PIT being higher than 1/12 indicates overdispersed predictive distributions...here $f_1$'s PIT variance is lower than 1/12 but it has an inverse U-shape PIT, so I am not sure which kind of miscalibration this is....
+
+```{r,include=FALSE,cache=FALSE}
+# Scenario 3: 
+coefs3 <- c(a0 = 1, a1 = 1, a2 = 1, a3 = 1.1)
+means3 <- sds3 <- matrix(NA, nrow = length(Y), ncol = 3)
+
+for(i in 1:ncol(means3)){
+  ind <- 1:4 %in% c(1, i+1)
+  means3[,i]  <- (vars[, ind]) %*% coefs3[ind]
+  sds3[,i]    <- sqrt(1 + sum(coefs3[!ind]^2))
+}
+
+sds3[,1]<- sds3[,1]+0.5
+
+# TLP (Traditional linear pool) combination -----------------------------------
+# Simple linear combination of forecasts
+weights_TLP3<-get_TLPpars(means3,sds3)
+round(weights_TLP3, 3)
+
+# SLP (Spread-adjusted linear pool) combination -------------------------------
+par_SLP3<-get_SLPpars(means3,sds3)
+weights_SLP3<-par_SLP3[-1]
+con3<-par_SLP3[1]
+round(weights_SLP3, 3)
+round(con3, 3)
+
+# component-specific SLP (Spread-adjusted linear pool) combination -------------------------------
+par_indSLP3<-get_indSLPpars(means3,sds3)
+weights_indSLP3<-par_SLP3[-c(1:3)]
+ind_con3<-par_indSLP3[c(1:3)]
+round(weights_indSLP3, 3)
+round(ind_con3, 3)
+
+# BLP (Beta-transformed linear pool) combination ------------------------------
+par_BLP3<-get_BLPpars(means3,sds3)
+weights_BLP3<-par_BLP3[-c(1:2)]
+ab3<-par_BLP3[c(1:2)]
+round(weights_BLP3, 3)
+round(ab3, 3)
+
+
+# component-specific BLP (Beta-transformed linear pool) combination ------------------------------
+comp_bpars3<-matrix(NA,ncol=2,nrow=3)
+for(i in 1:3){
+  ab3<-get_indBLPpars(means3,sds3,i)
+  comp_bpars3[i,1]<-ab3[1]
+  comp_bpars3[i,2]<-ab3[2]
+}
+round(comp_bpars3, 3)
+
+
+# BLP components in BLP
+par_BBLP3<-get_BBLPpars(means3,sds3,comp_bpars3)
+weights_BBLP3<-par_BBLP3[-c(1:2)]
+abb3<-par_BBLP3[c(1:2)]
+round(weights_BBLP3, 3)
+round(abb3, 3)
+```
+
+```{r, include=FALSE}
+# Evaluation ------------------------------------------------------------------
+
+# Parameter values
+table3 <- matrix(NA, nrow = 8, ncol = 9, 
+                dimnames = list(c(forecast_names[4:6],"cSLP","beta-f1","beta-f2","beta-f3","cBLP"), 
+                                c("w1", "w2", "w3", "c", "alpha", "beta",
+                                  "c1","c2","c3")))
+table3[1,] <- c(weights_TLP3, rep(NA, 6))
+table3[2,] <- c(par_SLP3[-1], par_SLP3[1], rep(NA, 5))
+table3[3,] <- c(par_BLP3[-c(1,2)], NA, par_BLP3[1:2],rep(NA, 3))
+table3[4,] <- c(par_indSLP3[-c(1:3)],rep(NA, 3),par_indSLP3[1:3])
+table3[5,] <- c(rep(NA, 4),comp_bpars3[1,c(1:2)],rep(NA, 3))
+table3[6,] <- c(rep(NA, 4),comp_bpars3[2,c(1:2)],rep(NA, 3))
+table3[7,] <- c(rep(NA, 4),comp_bpars3[3,c(1:2)],rep(NA, 3))
+table3[8,] <- c(par_BBLP3[-c(1,2)], NA, par_BBLP3[1:2],rep(NA, 3))
+table3<-round(table3, 2)
+
+# var(PIT) 
+vPIT3 <- matrix(NA,nrow=11,ncol = 1)
+rownames(vPIT3) <- c(forecast_names,"cSLP","beta-f1","beta-f2","beta-f3","cBLP")
+colnames(vPIT3) <- c("Variance")
+for(i in 1:3) vPIT3[i] <- PIT_normal(Y = Y[!ind_est], mu = means3[!ind_est ,i], 
+                                     sd = sds3[!ind_est ,i], var = TRUE)
+vPIT3[4] <- wrapper_TLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+                        sds = sds3[!ind_est, ], weights = weights_TLP3, varPIT = TRUE)
+vPIT3[5] <- wrapper_SLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+                        sds = sds3[ind_est, ], pars = par_SLP3, varPIT = TRUE)
+vPIT3[6] <- wrapper_BLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+                        sds = sds3[!ind_est, ], pars = par_BLP3, varPIT = TRUE)
+vPIT3[7] <- wrapper_indSLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+                           sds = sds3[!ind_est, ], pars = par_indSLP3, varPIT = TRUE)
+for(i in 1:3) vPIT3[7+i] <- PIT_beta(Y = Y[!ind_est], mu = means3[!ind_est ,i], 
+                                     sd = sds3[!ind_est ,i],ab=comp_bpars3[i,c(1:2)], var = TRUE)
+vPIT3[11] <- wrapper_BBLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+                          sds = sds3[!ind_est, ], pars = par_BBLP3, cab=comp_bpars3, varPIT = TRUE)
+vPIT3<-round(vPIT3, 3)
+# # Mean log score
+# # # LS(f,y) = -log(f(y))
+mls3 <- matrix(NA, nrow = 11, ncol = 2,
+                dimnames = list(c(forecast_names,
+                                  "cSLP","beta-f1","beta-f2","beta-f3","cBLP"),
+                                c("Training", "Test")))
+ for(j in 1:2){
+   ind <- if(j == 1){ind_est}else{!ind_est}
+   for(i in 1:3) mls3[i, j]  <- mean(ll_normal(Y = Y[ind,], mu = means3[ind, i],
+                                               sd = sds3[ind, i]))
+   mls3[4, j] <- mean(wrapper_TLP(Y = Y[ind], means = means3[ind,],
+                                   sds = sds3[ind,], weights = weights_TLP3, eval = FALSE))
+   mls3[5, j] <- mean(wrapper_SLP(Y = Y[ind], means = means3[ind,],
+                                   sds = sds3[ind,], pars = par_SLP3, eval = FALSE))
+   mls3[6, j] <- mean(wrapper_BLP(Y = Y[ind], means = means3[ind,],
+                                   sds = sds3[ind,], pars = par_BLP3, eval = FALSE))
+   mls3[7, j] <- mean(wrapper_indSLP(Y = Y[ind], means = means3[ind,],
+                                    sds = sds3[ind,], pars = par_indSLP3, eval = FALSE))
+   for(i in 1:3) mls3[7+i, j]  <- mean(ll_beta(Y = Y[ind,], mu = means3[ind, i],
+                                               sd = sds3[ind, i], ab=comp_bpars3[i,]))
+   mls3[11, j] <- mean(wrapper_BBLP(Y = Y[ind], means = means3[ind,], sds = sds3[ind,],
+                                      pars = par_BBLP3,cab=comp_bpars3, eval = FALSE))
+ }
+
+```
+
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+# PIT Histogramme
+par(mfrow = c(2,3))
+for(i in 1:3) PIT_normal(Y = Y[!ind_est], mu = means3[!ind_est ,i],
+                         sd = sds3[!ind_est ,i], plot = TRUE, name = i)
+wrapper_TLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+            sds = sds3[!ind_est, ], weights = weights_TLP3, plot = TRUE)
+wrapper_SLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+            sds = sds3[!ind_est, ], pars = par_SLP3, plot = TRUE)
+wrapper_BLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+            sds = sds3[!ind_est, ], pars = par_BLP3, plot = TRUE)
+wrapper_indSLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+               sds = sds3[!ind_est, ], pars = par_indSLP3, plot = TRUE)
+for(i in 1:3) PIT_beta(Y = Y[!ind_est], mu = means3[!ind_est ,i],
+                       sd = sds3[!ind_est ,i],ab=comp_bpars3[i,c(1:2)], plot = TRUE, name = i)
+wrapper_BBLP(Y = Y[!ind_est], means = means3[!ind_est, ],
+             sds = sds3[!ind_est, ], pars = par_BBLP3, cab=comp_bpars3, plot = TRUE)
+```
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap=""}
+# Overview over estimated parameters
+# NA's denote parameter that are not part of the corresponding model
+table3<-round(table3, 2)
+knitr::kable(table3, "latex", booktabs = T,caption="Model Parameters") %>%
+   kable_styling(latex_options = "striped")
+vPIT3<-round(vPIT3,3)
+# # Mean log scores over the training and the test sample
+mls3<-round(mls3, 3)
+knitr::kable(list(vPIT3,mls3), "latex", booktabs = T,caption = "Variance of PITs and Log Score") %>%
+   kable_styling(latex_options = "striped")
+```
