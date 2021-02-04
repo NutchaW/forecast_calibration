@@ -1,0 +1,153 @@
+---
+title: "Comparison of Ensemble Recalibration Methods in Flu Forecasting 2"
+author: "Nutcha Wattanachit"
+date: "02/03/2021"
+header-includes:
+   - \usepackage{booktabs}
+   - \usepackage{tabularx}
+   - \usepackage{amssymb}
+   - \usepackage{hyperref}
+   - \usepackage{multicol}
+   - \usepackage{longtable}
+   - \usepackage{array}
+   - \usepackage{multirow}
+   - \usepackage{wrapfig}
+   - \usepackage{float}
+   - \usepackage{colortbl}
+   - \usepackage{pdflscape}
+   - \usepackage{tabu}
+   - \usepackage{threeparttable}
+   - \usepackage{threeparttablex}
+   - \usepackage{makecell}
+   - \usepackage{xcolor}
+output:
+  pdf_document:
+        keep_tex: true
+        latex_engine: xelatex
+        extra_dependencies: ["float"]
+---
+
+```{r setup, include=FALSE}
+library(Matrix)
+library(tidyverse)
+library(tidyr)
+library(mixtools)
+library(knitr)
+library(rstan)
+
+knitr::opts_chunk$set(echo = FALSE, 
+                      #warning(file = "./R-warnings.txt"),
+                      comment = FALSE, message=FALSE, fig.show= 'hold', fig.pos="h",
+                      table.placement='h')
+#options(kableExtra.latex.load_packages = FALSE)
+```
+
+# Simulation study with empirical distributions
+
+This markdown doesn't include BLP, EW-BLP since these can be done not using stan. It also doesn't include any EW-BMC since it will work if BMC works. 
+
+```{r, include=FALSE}
+set.seed(1234)
+source("./applied_blp_sim_ver2.R")
+# -----------Scenario 0: Simulation setup -----------------------#
+n <- 1000
+forecast_names <- c("TLP", "BLP","EW", "EW-BLP",
+                    "BMC2","EW-BMC2","BMC3","EW-BMC3",
+                    "BMC4","EW-BMC4","BMC5","EW-BMC5")
+ind_est <- sample(1:n,n-(n/5))
+```
+
+
+## Scenario 2: Multimodal DGP (Normal mixture) with empirical distributions
+
+This is the same scenario as in the other markdown. The data generating process for the observation $y_t$ is 
+
+$$
+y_t \overset{i.i.d.}{\sim} p_1\text{N}(-2,0.25)+p_2\text{N}(0,0.25)+p_3\text{N}(2,0.25), \\
+t= 1,...,1000
+$$
+
+where $p_1=0.2,p_2=0.2$, and $p_3=0.6$. However, here we will simulate from the normal distributions to make empirical pdfs. Since we calculate the binned probability exactly from normal distributions, binned probabilities (empirical pdfs) are exactly the same for all $t$ in each component model.
+
+```{r, include=FALSE}
+# data simulation
+p <- c(0.2,0.2,0.6)
+mu <- c(-2,0,2)
+sigma <- rep(0.25, 3)
+Y <- data.frame(cbind(index=1:n,Y=rnormmix(n, p, mu, sigma)))
+# build component model
+## set bins
+bin_start <- c(-Inf,seq(-3,3,0.25^2))
+bin_end <- c(dplyr::lead(bin_start)[-length(bin_start)],Inf)
+index <- c()
+for(i in 1:n){
+  index <- c(index,rep(i,length(bin_start)))
+}
+temp <- data.frame(cbind(index,rep(bin_start,n),rep(bin_end,n)))
+names(temp)[2:3] <- c("bin_start","bin_end")
+rm(bin_start,bin_end,index)
+#  fill in bin probs
+comp_names <- c("binned_forecast1","binned_forecast2","binned_forecast3")
+comp_binned_forecasts <- data.frame()
+for(j in 1:length(comp_names)){
+  frame <- temp %>%
+    dplyr::group_by(index) %>%
+    dplyr::mutate(binned_probs=pnorm(bin_end,mu[j],sigma) - pnorm(bin_start,mu[j],sigma),
+                  model=comp_names[j]) %>%
+    ungroup()
+  rbind(comp_binned_forecasts,frame) -> comp_binned_forecasts
+}
+rm(temp,frame)
+```
+
+The individual predictive densities are defined as follows:
+
+$$
+\begin{aligned}
+f_{1}&\overset{i.i.d.}{\sim}\text{N}(-2,0.25)\\
+f_{2}&\overset{i.i.d.}{\sim}\text{N}(0,0.25)\\
+f_{3}&\overset{i.i.d.}{\sim}\text{N}(2,0.25)\\
+\end{aligned}
+$$
+
+
+```{r, include=FALSE}
+M <- length(unique(comp_binned_forecasts$model))
+# get ensemble params
+# TLP/BLP/EW/EW-BLP -----------------------------------
+EW_params <- rep(1/M,M)
+TLP_params <- make_ensemble("TLP", K=1, M=M, ind_est, Y, comp_binned_forecasts,
+                            initial_vals=list(omega=EW_params),
+                            hyperpars=NULL)
+
+# BMC/EW-BMC --------------------------------------------------------------------------
+# not including EW-BMC in the function currently since we have yet to make this converge
+# Just try with BMC2 for now
+for(mix_ens in forecast_names[5]){
+  K<- as.numeric(substring(mix_ens,nchar(mix_ens)))
+  w_vec_inits <- sample.int(100, size = K, replace = FALSE)
+  init_vals <- list(mu=rnorm(K,0.5,1e-3),nu=rnorm(K,2,1e-3),w=w_vec_inits/sum(w_vec_inits))
+  if(!(grepl(mix_ens,"EW",fixed = TRUE))){
+    init_vals[["omega_k"]] <- t(replicate(K, TLP_params))
+    } 
+  hyperpars <- list(alpha_w=rep(1.0,K),alpha_omega=rep(1.0,M),omega_ew=rep(1/M,M))
+  assign(paste0(mix_ens,"_params"),
+         make_ensemble(mix_ens, K=K,M=M, ind_est, Y, comp_binned_forecasts,
+                       initial_vals=init_vals,hyperpars=hyperpars)
+         )
+  }
+```
+
+```{r, include=FALSE}
+# Evaluation ------------------------------------------------------------------
+# get component results
+for(i in 1:M){
+  assign(paste0(comp_names[i],"_results"), 
+         comp_binned_forecasts %>%
+           dplyr::filter(model==comp_names[i]) %>%
+           dplyr::select(-"model") %>%
+           ls_pit_calc(., Y, ind_est))
+}
+
+#### add ensemble results once we get the parameters
+```

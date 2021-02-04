@@ -1,0 +1,652 @@
+---
+title: "Simulation studies: TLP, BLP, and extensions of BLP"
+author: "Nutcha Wattanachit"
+date: "8/25/2020"
+header-includes:
+   - \usepackage{booktabs}
+   - \usepackage{tabularx}
+   - \usepackage{hyperref}
+   - \usepackage{multicol}
+   - \usepackage{longtable}
+   - \usepackage{array}
+   - \usepackage{multirow}
+   - \usepackage{wrapfig}
+   - \usepackage{float}
+   - \usepackage{colortbl}
+   - \usepackage{pdflscape}
+   - \usepackage{tabu}
+   - \usepackage{threeparttable}
+   - \usepackage{threeparttablex}
+   - \usepackage{makecell}
+   - \usepackage{xcolor}
+output:
+  pdf_document:
+        keep_tex: true
+        latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+library(pipeR)
+library(cdcfluview)
+library(Matrix)
+library(tidyverse)
+library(cowplot)
+library(data.table)
+library(reshape2)
+library(gridExtra)
+library(ranger)
+library(splines)
+library(ggplot2)
+library(xtable)
+library(here)
+library(stats)
+library(mixtools)
+library(cowplot)
+library(ggforce)
+library(grid)
+library(FluSight)
+library(rmutil)
+library(here)
+library(knitr)
+library(kableExtra)
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, comment = FALSE, message=FALSE, fig.show= 'hold',
+                      table.placement='H')
+options(kableExtra.latex.load_packages = FALSE)
+```
+
+# Simulation studies
+
+The data generating process for the observation $Y$ in the regression model is 
+
+$$
+Y = X_0+a_1X_1+a_2X_2+a_3X_3+ \epsilon, \\
+\epsilon \sim(0,1)
+$$
+
+where $a_1,a_2,$ and $a_3$ are real constants that vary across different simulation studies, and $X_0,X_1,X_2,X_3,$ and $\epsilon$ are independent, standard normal random variables. The individual predictive densities have partial access of the above set of covariates. $f_1$ has access to only $X_0$ and $X_1$, $f_2$ has access to only $X_0$ and $X_2$, and $f_3$ has access to only $X_0$ and $X_3$. We want to combine $f_1,f_2,$ and $f_3$ to predict $Y$. In this setup, $X_0$ represent shared information, while other covariates represent information unique to each individual model.
+
+We estimate the pooling/combination formulas on a random sample ${(f_{1i} , f_{2i} , f_{3i}, Y_i) : i = 1,..., n}$ of size $n = 50,000$ and evaluate on an independent test sample of the same size.
+
+\clearpage
+
+## Scenario 1: Unbiased and calibrated components 
+
+In this scenario, $a_1 = a_2 = 1$ and $a_3 = 1.1$, so that $f_3$ is a more concentrated, sharper density forecast than $f_1$ and $f_2$ (Gneiting and Ranjan (2013)) and they are defined as follows:
+
+$$
+\begin{aligned}
+f_1&=\text{N}(X_0+a_1X_1,1+a^2_2+a^2_3)\\
+f_2&=\text{N}(X_0+a_2X_2,1+a^2_1+a^2_3)\\
+f_3&=\text{N}(X_0+a_3X_3,1+a^2_1+a^2_2)\\
+\end{aligned}
+$$
+
+
+```{r, include=FALSE,cache=TRUE}
+source("./newest_simBLP_new.R")
+# -----------Scenario 0: Simulation setup -----------------------#
+n <- 1e5
+
+coefs <- c(a0 = 1, a1 = 1, a2 = 1, a3 = 1.1)
+vars  <- matrix(rnorm(n = n*4), nrow = n, dimnames = list(NULL, c("x0", "x1", "x2", "x3")))
+
+Y       <- vars %*% coefs + rnorm(n = n)
+
+means0 <- sds0 <- matrix(NA, nrow = length(Y), ncol = 3)
+
+for(i in 1:ncol(means0)){
+  ind <- 1:4 %in% c(1, i+1)
+  means0[,i]  <- vars[, ind] %*% coefs[ind]
+  sds0[,i]    <- sqrt(1 + sum(coefs[!ind]^2))
+}
+
+# forecast_names <- c("TLP", "BLP","nBLP", "cBLP", "bcBLP", "bcnBLP")
+forecast_names <- c("TLP", "BLP","nBLP", "cBLP")
+
+ind_est <- c(rep(TRUE, n/2), rep(FALSE, n/2))
+
+# TLP (Traditional linear pool) combination -----------------------------------
+# Simple linear combination of forecasts
+weights_TLP0<-get_TLPpars(means0,sds0)
+
+# BLP (Beta-transformed linear pool) combination ------------------------------
+par_BLP0<-get_BLPpars(means0,sds0)
+weights_BLP0<-par_BLP0[-c(1:2)]
+ab0<-par_BLP0[c(1:2)]
+
+# NBLP (Beta-transformed linear pool) combination ------------------------------
+par_nBLP0<-get_nBLPpars(means0,sds0)
+weights_nBLP0<-par_nBLP0[-c(1:3)]
+abc0<-par_nBLP0[c(1:3)]
+
+# component-specific BLP (Beta-transformed linear pool) combination ------------------------------
+comp_bpars0<-matrix(NA,ncol=2,nrow=3)
+for(i in 1:3){
+  ab0<-get_indBLPpars(means0,sds0,i)
+  comp_bpars0[i,1]<-ab0[1]
+  comp_bpars0[i,2]<-ab0[2]
+}
+### BLP components in BLP
+par_cBLP0<-get_cBLPpars(means0,sds0,comp_bpars0)
+weights_cBLP0<-par_cBLP0[-c(1:2)]
+cBLP_ab0<-par_cBLP0[c(1:2)]
+
+# # underdispersed component ------------------------------
+# var_bpars0<-matrix(NA,ncol=1,nrow=3)
+# for(i in 1:3){
+#   var_bpars0[i]<-wrapper_indBLP_nonc(Y[ind_est],means0[ind_est,i],sds0[ind_est,i],
+#                            c(comp_bpars0[i,1],comp_bpars0[i,2]),
+#                            eval = FALSE,varPIT = TRUE)
+# }
+# par_cBLP0<-get_cBLPpars(means0,sds0,comp_bpars0)
+# weights_cBLP0<-par_cBLP0[-c(1:2)]
+# cBLP_ab0<-par_cBLP0[c(1:2)]
+
+### bcBLP
+# errs0 <- mean_err(Y[ind_est],means0[ind_est,])
+# par_bcBLP0<-get_bcBLPpars(means0,sds0,errs0)
+# weights_bcBLP0<-par_bcBLP0[-c(1:2)]
+# bcBLP_ab0<-par_bcBLP0[c(1:2)]
+# 
+# ### bcnBLP
+# par_bcnBLP0<-get_bcnBLPpars(means0,sds0,errs0)
+# weights_bcnBLP0<-par_bcnBLP0[-c(1:3)]
+# bcnBLP_ab0<-par_bcnBLP0[c(1:3)]
+```
+
+
+```{r, include=FALSE}
+# Evaluation ------------------------------------------------------------------
+# Parameter values
+# table0 <- matrix(NA, nrow = 4, ncol = 6, 
+#                 dimnames = list(c(forecast_names), c("w1", "w2", "w3", "alpha", "beta","ncp")))
+# table0[1,] <- c(weights_TLP0, rep(NA, 3))
+# table0[2,] <- c(par_BLP0[-c(1:2)], par_BLP0[1:2],NA)
+# table0[3,] <- c(par_nBLP0[-c(1:3)], par_nBLP0[1:3])
+# table0[4,] <- c(par_cBLP0[-c(1:2)], par_cBLP0[1:2],NA)
+# # table0[5,] <- c(par_bcBLP0[-c(1:2)], par_bcBLP0[1:2],NA)
+# # table0[6,] <- c(par_bcnBLP0[-c(1:3)], par_bcnBLP0[1:3])
+# table0<-round(table0, 3)
+# 
+# # # Mean log score
+# # # # LS(f,y) = -log(f(y))
+# mls0 <- matrix(NA, nrow = 7, ncol = 2,
+#                 dimnames = list(c(c("f1","f2","f3"),forecast_names),
+#                                 c("Training", "Test")))
+#  for(j in 1:2){
+#    ind <- if(j == 1){ind_est}else{!ind_est}
+#    for(i in 1:3) mls0[i, j]  <- mean(ll_normal(Y = Y[ind], mu = means0[ind, i],
+#                                                sd = sds0[ind, i]))
+#    mls0[4, j] <- mean(wrapper_TLP_nonc(Y = Y[ind], means = means0[ind,],
+#                                    sds = sds0[ind,], weights = weights_TLP0, eval = FALSE))
+#    mls0[5, j] <- mean(wrapper_BLP_nonc(Y = Y[ind], means = means0[ind,],
+#                                    sds = sds0[ind,], pars = par_BLP0, eval = FALSE))
+#    mls0[6, j] <- mean(wrapper_nBLP_nonc(Y = Y[ind], means = means0[ind,],
+#                                    sds = sds0[ind,], pars = par_nBLP0, eval = FALSE))
+#    mls0[7, j] <- mean(wrapper_cBLP_nonc(Y = Y[ind], means = means0[ind,], sds = sds0[ind,],
+#                                       pars = par_cBLP0,cab=comp_bpars0, eval = FALSE))
+#  }
+# 
+# # Variance
+# # # # LS(f,y) = -log(f(y))
+# var0 <- matrix(NA, nrow = 7, ncol = 2,
+#                 dimnames = list(c(c("f1","f2","f3"),forecast_names),
+#                                 c("Training", "Test")))
+#  for(j in 1:2){
+#    ind <- if(j == 1){ind_est}else{!ind_est}
+#    for(i in 1:3) var0[i, j]  <- mean(PIT_normal(Y = Y[ind], mu = means0[ind, i],
+#                                                 sd = sds0[ind, i],var=TRUE))
+#    var0[4, j] <- mean(wrapper_TLP_nonc(Y = Y[ind], means = means0[ind,],
+#                                    sds = sds0[ind,], weights = weights_TLP0, eval = FALSE,
+#                                    varPIT=TRUE))
+#    var0[5, j] <- mean(wrapper_BLP_nonc(Y = Y[ind], means = means0[ind,],
+#                                    sds = sds0[ind,], pars = par_BLP0, eval = FALSE,
+#                                    varPIT=TRUE))
+#    var0[6, j] <- mean(wrapper_nBLP_nonc(Y = Y[ind], means = means0[ind,],
+#                                    sds = sds0[ind,], pars = par_nBLP0, eval = FALSE,
+#                                    varPIT=TRUE))
+#    var0[7, j] <- mean(wrapper_cBLP_nonc(Y = Y[ind], means = means0[ind,], sds = sds0[ind,],
+#                                       pars = par_cBLP0,cab=comp_bpars0, eval = FALSE,
+#                                    varPIT=TRUE))
+#  }
+
+table0 <-make_table(forecast_names,weights_TLP0,par_BLP0,par_nBLP0,par_cBLP0)
+
+mls0 <- make_ls(forecast_names,Y,means0,sds0,weights_TLP0,par_BLP0,par_nBLP0,par_cBLP0,comp_bpars0)
+
+var0<-make_var(forecast_names,Y,means0,sds0,weights_TLP0,par_BLP0,par_nBLP0,par_cBLP0,comp_bpars0)
+
+```
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap=""}
+# Overview over estimated parameters
+knitr::kable(list(table0,mls0,var0), "latex", booktabs = T,caption = "Model Parameters and Log Score") %>%
+   kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+```{r,fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+# PIT Histogramme
+par(mfrow = c(2,3))
+plot_PITs(Y,means0,sds0,weights_TLP0,par_BLP0,par_nBLP0,par_cBLP0,comp_bpars0)
+# for(i in 1:3) PIT_normal(Y = Y[!ind_est], mu = means0[!ind_est ,i], 
+#                          sd = sds0[!ind_est ,i], plot = TRUE, name = i)
+# for(i in 1:3) wrapper_indBLP_nonc(Y = Y[!ind_est], means = means0[!ind_est ,i], 
+#                          sds = sds0[!ind_est ,i], pars = comp_bpars0[i,],
+#                          plot = TRUE, name = i) 
+# wrapper_TLP_nonc(Y = Y[!ind_est], means = means0[!ind_est, ],
+#             sds = sds0[!ind_est, ], weights = weights_TLP0, plot = TRUE)
+# wrapper_BLP_nonc(Y = Y[!ind_est], means = means0[!ind_est, ],
+#             sds = sds0[!ind_est, ], pars = par_BLP0, plot = TRUE)
+# wrapper_nBLP_nonc(Y = Y[!ind_est], means = means0[!ind_est, ],
+#             sds = sds0[!ind_est, ], pars = par_nBLP0, plot = TRUE)
+# wrapper_cBLP_nonc(Y = Y[!ind_est], means = means0[!ind_est, ],
+#             sds = sds0[!ind_est, ], pars = par_cBLP0, cab=comp_bpars0, plot = TRUE)
+# wrapper_bcBLP_nonc(Y = Y[!ind_est], means = means0[!ind_est, ],
+#             sds = sds0[!ind_est, ], pars = par_bcBLP0, errs0, plot = TRUE)
+# wrapper_bcnBLP_nonc(Y = Y[!ind_est], means = means0[!ind_est, ],
+#             sds = sds0[!ind_est, ], pars = par_bcnBLP0, errs0, plot = TRUE)
+#dev.off()
+```
+
+\clearpage
+
+<!-- ## Scenario 2: Biased and miscalibrated components -->
+
+<!-- In this scenario, $a_1 = a_2 = 1$ and $a_3 = 1.1$, and we add noise to the means of component model so that they are biased. The models are defined as follows: -->
+
+<!-- $$ -->
+<!-- \begin{aligned} -->
+<!-- f_1&=\text{N}(X_0+a_1X_1+N(0.8,0.4),1+a^2_2+a^2_3)\\ -->
+<!-- f_2&=\text{N}(X_0+a_2X_2+N(-0.5,1),1+a^2_1+a^2_3)\\ -->
+<!-- f_3&=\text{N}(X_0+a_3X_3+N(1,0.2),1+a^2_1+a^2_2)\\ -->
+<!-- \end{aligned} -->
+<!-- $$ -->
+
+<!-- ```{r,include=FALSE,cache=TRUE} -->
+<!-- #------------scene 1 Simulation setup ------------------------------------------------------------ -->
+
+<!-- # coefs <- c(a0 = 1, a1 = 1, a2 = 1, a3 = 1.1) -->
+<!-- # vars  <- matrix(rnorm(n = n*4), nrow = n, dimnames = list(NULL, c("x0", "x1", "x2", "x3"))) -->
+<!-- #  -->
+<!-- # Y       <- vars %*% coefs + rnorm(n = n) -->
+<!-- # means <- sds <- matrix(NA, nrow = length(Y), ncol = 3) -->
+<!-- #  -->
+<!-- # for(i in 1:ncol(means)){ -->
+<!-- #   ind <- 1:4 %in% c(1, i+1) -->
+<!-- #   means[,i]  <- vars[, ind] %*% coefs[ind] -->
+<!-- #   sds[,i]    <- sqrt(1 + sum(coefs[!ind]^2)+3*(i==1)+5*(i==2)+10*(i==3)) -->
+<!-- # } -->
+
+<!-- noise1<-rnorm(n,0.8,0.4) -->
+<!-- noise2 <- rnorm(n,-0.5,1) -->
+<!-- noise3 <- rnorm(n,1,0.2) -->
+
+<!-- Y       <- vars %*% coefs + rnorm(n = n) -->
+<!-- means <- sds <- matrix(NA, nrow = length(Y), ncol = 3) -->
+
+<!-- for(i in 1:ncol(means)){ -->
+<!--   ind <- 1:4 %in% c(1, i+1) -->
+<!--   means[,i]  <- vars[, ind] %*% coefs[ind]+noise1*(i==1)+noise2*(i==2)+noise3*(i==3) -->
+<!--   sds[,i]    <- sqrt(1 + sum(coefs[!ind]^2)) -->
+<!-- } -->
+
+<!-- # TLP (Traditional linear pool) combination ----------------------------------- -->
+<!-- # Simple linear combination of forecasts -->
+<!-- weights_TLP2<-get_TLPpars(means,sds) -->
+
+<!-- # BLP (Beta-transformed linear pool) combination ------------------------------ -->
+<!-- par_BLP2<-get_BLPpars(means,sds) -->
+<!-- weights_BLP2<-par_BLP2[-c(1:2)] -->
+<!-- ab2<-par_BLP2[c(1:2)] -->
+
+<!-- # NBLP (Beta-transformed linear pool) combination ------------------------------ -->
+<!-- par_nBLP2<-get_nBLPpars(means,sds) -->
+<!-- weights_nBLP2<-par_nBLP2[-c(1:3)] -->
+<!-- abc2<-par_nBLP2[c(1:3)] -->
+
+<!-- # component-specific BLP (Beta-transformed linear pool) combination ------------------------------ -->
+<!-- comp_bpars2<-matrix(NA,ncol=2,nrow=3) -->
+<!-- for(i in 1:3){ -->
+<!--   ab2<-get_indBLPpars(means,sds,i) -->
+<!--   comp_bpars2[i,1]<-ab2[1] -->
+<!--   comp_bpars2[i,2]<-ab2[2] -->
+<!-- } -->
+
+<!-- # BLP components in BLP -->
+<!-- par_cBLP2<-get_cBLPpars(means,sds,comp_bpars2) -->
+<!-- weights_cBLP2<-par_cBLP2[-c(1:2)] -->
+<!-- cBLP_ab2<-par_cBLP2[c(1:2)] -->
+
+<!-- ### bcBLP -->
+<!-- errs2 <- mean_err(Y[ind_est],means[ind_est,]) -->
+<!-- par_bcBLP2<-get_bcBLPpars(means,sds,errs2) -->
+<!-- weights_bcBLP2<-par_bcBLP2[-c(1:2)] -->
+<!-- bcBLP_ab2<-par_bcBLP2[c(1:2)] -->
+
+<!-- ### bcnBLP -->
+<!-- par_bcnBLP2<-get_bcnBLPpars(means,sds,errs2) -->
+<!-- weights_bcnBLP2<-par_bcnBLP2[-c(1:3)] -->
+<!-- bcnBLP_ab2<-par_bcnBLP2[c(1:3)] -->
+<!-- ``` -->
+
+<!-- ```{r, include=FALSE} -->
+<!-- # Evaluation ------------------------------------------------------------------ -->
+
+<!-- # Parameter values -->
+<!-- table2 <- matrix(NA, nrow = 6, ncol = 6,  -->
+<!--                 dimnames = list(c(forecast_names), c("w1", "w2", "w3", "alpha", "beta","ncp"))) -->
+<!-- table2[1,] <- c(weights_TLP2, rep(NA, 3)) -->
+<!-- table2[2,] <- c(par_BLP2[-c(1:2)], par_BLP2[1:2],NA) -->
+<!-- table2[3,] <- c(par_nBLP2[-c(1:3)], par_nBLP2[1:3]) -->
+<!-- table2[4,] <- c(par_cBLP2[-c(1:2)], par_cBLP2[1:2],NA) -->
+<!-- table2[5,] <- c(par_bcBLP2[-c(1:2)], par_bcBLP2[1:2],NA) -->
+<!-- table2[6,] <- c(par_bcnBLP2[-c(1:3)], par_bcnBLP2[1:3]) -->
+<!-- table2<-round(table2, 3) -->
+
+<!-- # # Mean log score -->
+<!-- # # # LS(f,y) = -log(f(y)) -->
+<!-- mls2 <- matrix(NA, nrow = 9, ncol = 2, -->
+<!--                 dimnames = list(c(c("f1","f2","f3"),forecast_names), -->
+<!--                                 c("Training", "Test"))) -->
+<!--  for(j in 1:2){ -->
+<!--    ind <- if(j == 1){ind_est}else{!ind_est} -->
+<!--    for(i in 1:3) mls2[i, j]  <- mean(ll_normal(Y = Y[ind], mu = means[ind, i], -->
+<!--                                                sd = sds[ind, i])) -->
+<!--    mls2[4, j] <- mean(wrapper_TLP_nonc(Y = Y[ind], means = means[ind,], -->
+<!--                                    sds = sds[ind,], weights = weights_TLP2, eval = FALSE)) -->
+<!--    mls2[5, j] <- mean(wrapper_BLP_nonc(Y = Y[ind], means = means[ind,], -->
+<!--                                    sds = sds[ind,], pars = par_BLP2, eval = FALSE)) -->
+<!--    mls2[6, j] <- mean(wrapper_nBLP_nonc(Y = Y[ind], means = means[ind,], -->
+<!--                                    sds = sds[ind,], pars = par_nBLP2, eval = FALSE)) -->
+<!--    mls2[7, j] <- mean(wrapper_cBLP_nonc(Y = Y[ind], means = means[ind,], sds = sds[ind,], -->
+<!--                                       pars = par_cBLP2,cab=comp_bpars2, eval = FALSE)) -->
+<!--    mls2[8, j] <- mean(wrapper_bcBLP_nonc(Y = Y[ind], means = means[ind,], -->
+<!--                                    sds = sds[ind,], pars = par_bcBLP2,  -->
+<!--                                    errs=errs2, eval = FALSE)) -->
+<!--    mls2[9, j] <- mean(wrapper_bcnBLP_nonc(Y = Y[ind], means = means[ind,], -->
+<!--                                    sds = sds[ind,], pars = par_bcnBLP2,  -->
+<!--                                    errs=errs2, eval = FALSE)) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap=""} -->
+<!-- mls2<-round(mls2, 3) -->
+<!-- knitr::kable(list(table2,mls2), "latex", booktabs = T,caption = "Model Parameters and Log Score") %>% -->
+<!--    kable_styling(latex_options = c("striped", "hold_position")) -->
+<!-- ```  -->
+
+<!-- \clearpage -->
+
+<!-- ```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap="",results='hide'} -->
+<!-- par(mfrow = c(2,3)) -->
+<!-- for(i in 1:3) PIT_normal(Y = Y[!ind_est], mu = means[!ind_est ,i],  -->
+<!--                          sd = sds[!ind_est ,i], plot = TRUE, name = i) -->
+<!-- wrapper_TLP_nonc(Y = Y[!ind_est], means = means[!ind_est, ], -->
+<!--             sds = sds[!ind_est, ], weights = weights_TLP2, plot = TRUE) -->
+<!-- wrapper_BLP_nonc(Y = Y[!ind_est], means = means[!ind_est, ], -->
+<!--             sds = sds[!ind_est, ], pars = par_BLP2, plot = TRUE) -->
+<!-- wrapper_nBLP_nonc(Y = Y[!ind_est], means = means[!ind_est, ], -->
+<!--             sds = sds[!ind_est, ], pars = par_nBLP2, plot = TRUE) -->
+<!-- wrapper_cBLP_nonc(Y = Y[!ind_est], means = means[!ind_est, ], -->
+<!--             sds = sds[!ind_est, ], pars = par_cBLP2, cab=comp_bpars2, plot = TRUE) -->
+<!-- wrapper_bcBLP_nonc(Y = Y[!ind_est], means = means[!ind_est, ], -->
+<!--             sds = sds[!ind_est, ], pars = par_bcBLP2, errs2, plot = TRUE) -->
+<!-- wrapper_bcnBLP_nonc(Y = Y[!ind_est], means = means[!ind_est, ], -->
+<!--             sds = sds[!ind_est, ], pars = par_bcnBLP2, errs2, plot = TRUE) -->
+<!-- ``` -->
+
+<!-- \clearpage -->
+
+
+## Scenario 2 : Underdispersed components 
+
+We subtract constants from the variances of component density forecasts as follows:
+
+$$
+\begin{aligned}
+f_1&=\text{N}(X_0+a_1X_1,(1+a^2_2+a^2_3)-1)\\
+f_2&=\text{N}(X_0+a_2X_2,(1+a^2_1+a^2_3)-1)\\
+f_3&=\text{N}(X_0+a_3X_3,(1+a^2_1+a^2_2)-1.5)\\
+\end{aligned}
+$$
+
+```{r,include=FALSE,cache=TRUE}
+#------------ Scenario 2: some models are overconfident, others underconfident? (edited)---------- 
+#
+# Simulation setup ------------------------------------------------------------
+
+# coefs2 <- c(a0 = 1, a1 = 1, a2 = -1, a3 = 1.1)
+# means2 <- sds2 <- matrix(NA, nrow = length(Y), ncol = 3)
+# 
+# for(i in 1:ncol(means2)){
+#   ind <- 1:4 %in% c(1, i+1)
+#   means2[,i]  <- vars[, ind] %*% coefs2[ind]
+#   sds2[,i]    <- sqrt(1 + sum(coefs2[!ind]^2)+3*(i==1))
+# }
+
+means2 <- sds2 <- matrix(NA, nrow = length(Y), ncol = 3)
+
+for(i in 1:ncol(means2)){
+  ind <- 1:4 %in% c(1, i+1)
+  means2[,i]  <- vars[, ind] %*% coefs[ind]
+  sds2[,i]    <- sqrt(1 + sum(coefs[!ind]^2)+((-1)*(i==1))+((-1)*(i==2))+((-1.5)*(i==3)))
+}
+
+# TLP (Traditional linear pool) combination -----------------------------------
+# Simple linear combination of forecasts
+weights_TLP2<-get_TLPpars(means2,sds2)
+
+# BLP (Beta-transformed linear pool) combination ------------------------------
+par_BLP2<-get_BLPpars(means2,sds2)
+weights_BLP2<-par_BLP2[-c(1:2)]
+ab2<-par_BLP2[c(1:2)]
+
+# NBLP (Beta-transformed linear pool) combination ------------------------------
+par_nBLP2<-get_nBLPpars(means2,sds2)
+weights_nBLP2<-par_nBLP2[-c(1:3)]
+abc2<-par_nBLP2[c(1:3)]
+
+# component-specific BLP (Beta-transformed linear pool) combination ------------------------------
+comp_bpars2<-matrix(NA,ncol=2,nrow=3)
+for(i in 1:3){
+  ab2<-get_indBLPpars(means2,sds2,i)
+  comp_bpars2[i,1]<-ab2[1]
+  comp_bpars2[i,2]<-ab2[2]
+}
+
+# BLP components in BLP
+par_cBLP2<-get_cBLPpars(means2,sds2,comp_bpars2)
+weights_cBLP2<-par_cBLP2[-c(1:2)]
+cBLP_ab2<-par_cBLP2[c(1:2)]
+```
+
+
+```{r, include=FALSE}
+# Evaluation ------------------------------------------------------------------
+table2 <-make_table(forecast_names,weights_TLP2,par_BLP2,par_nBLP2,par_cBLP2)
+
+mls2 <- make_ls(forecast_names,Y,means2,sds2,weights_TLP2,par_BLP2,par_nBLP2,par_cBLP2,comp_bpars2)
+
+var2<-make_var(forecast_names,Y,means2,sds2,weights_TLP2,par_BLP2,par_nBLP2,par_cBLP2,comp_bpars2)
+```
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap=""}
+knitr::kable(list(table2,mls2,var2), "latex", booktabs = T,caption = "Model Parameters and Log Score") %>%
+   kable_styling(latex_options = c("striped", "hold_position"))
+```  
+
+\clearpage
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+par(mfrow = c(2,3))
+plot_PITs(Y,means2,sds2,weights_TLP2,par_BLP2,par_nBLP2,par_cBLP2,comp_bpars2)
+```
+
+\clearpage
+
+## Scenario  3: Overdispersed components
+
+We add constants from the variances of component density forecasts as follows:
+
+$$
+\begin{aligned}
+f_1&=\text{N}(X_0+a_1X_1,(1+a^2_2+a^2_3)+2)\\
+f_2&=\text{N}(X_0+a_2X_2,(1+a^2_1+a^2_3)+2)\\
+f_3&=\text{N}(X_0+a_3X_3,(1+a^2_1+a^2_2)+2)\\
+\end{aligned}
+$$
+
+```{r,include=FALSE,cache=TRUE}
+#------------ Scenario 2: some models are overconfident, others underconfident? (edited)---------- 
+#
+# Simulation setup ------------------------------------------------------------
+
+# coefs2 <- c(a0 = 1, a1 = 1, a2 = -1, a3 = 1.1)
+# means2 <- sds2 <- matrix(NA, nrow = length(Y), ncol = 3)
+# 
+# for(i in 1:ncol(means2)){
+#   ind <- 1:4 %in% c(1, i+1)
+#   means2[,i]  <- vars[, ind] %*% coefs2[ind]
+#   sds2[,i]    <- sqrt(1 + sum(coefs2[!ind]^2)+3*(i==1))
+# }
+
+means3 <- sds3 <- matrix(NA, nrow = length(Y), ncol = 3)
+
+for(i in 1:ncol(means3)){
+  ind <- 1:4 %in% c(1, i+1)
+  means3[,i]  <- vars[, ind] %*% coefs[ind]
+  sds3[,i]    <- sqrt(1 + sum(coefs[!ind]^2)+(2*(i==1))+(2*(i==2))+(2*(i==3)))
+}
+
+# TLP (Traditional linear pool) combination -----------------------------------
+# Simple linear combination of forecasts
+weights_TLP3<-get_TLPpars(means3,sds3)
+
+# BLP (Beta-transformed linear pool) combination ------------------------------
+par_BLP3<-get_BLPpars(means3,sds3)
+weights_BLP3<-par_BLP3[-c(1:2)]
+ab3<-par_BLP3[c(1:2)]
+
+# NBLP (Beta-transformed linear pool) combination ------------------------------
+par_nBLP3<-get_nBLPpars(means3,sds3)
+weights_nBLP3<-par_nBLP3[-c(1:3)]
+abc3<-par_nBLP3[c(1:3)]
+
+# component-specific BLP (Beta-transformed linear pool) combination ------------------------------
+comp_bpars3<-matrix(NA,ncol=2,nrow=3)
+for(i in 1:3){
+  ab3<-get_indBLPpars(means3,sds3,i)
+  comp_bpars3[i,1]<-ab3[1]
+  comp_bpars3[i,2]<-ab3[2]
+}
+
+# BLP components in BLP
+par_cBLP3<-get_cBLPpars(means3,sds3,comp_bpars3)
+weights_cBLP3<-par_cBLP3[-c(1:2)]
+cBLP_ab3<-par_cBLP3[c(1:2)]
+```
+
+```{r, include=FALSE}
+# Evaluation ------------------------------------------------------------------
+table3 <-make_table(forecast_names,weights_TLP3,par_BLP3,par_nBLP3,par_cBLP3)
+
+mls3 <- make_ls(forecast_names,Y,means3,sds3,weights_TLP3,par_BLP3,par_nBLP3,par_cBLP3,comp_bpars3)
+
+var3<-make_var(forecast_names,Y,means3,sds3,weights_TLP3,par_BLP3,par_nBLP3,par_cBLP3,comp_bpars3)
+```
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap=""}
+knitr::kable(list(table3,mls3,var3), "latex", booktabs = T,caption = "Model Parameters and Log Score") %>%
+   kable_styling(latex_options = c("striped", "hold_position"))
+```  
+
+\clearpage
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+par(mfrow = c(2,3))
+plot_PITs(Y,means3,sds3,weights_TLP3,par_BLP3,par_nBLP3,par_cBLP3,comp_bpars3)
+```
+
+\clearpage
+
+## Scenario 4: Over- and underdispersed components
+
+The models are defined as follows:
+
+$$
+\begin{aligned}
+f_1&=\text{N}(X_0+a_1X_1,(1+a^2_2+a^2_3)-0.8)\\
+f_2&=\text{N}(X_0+a_2X_2,(1+a^2_1+a^2_3)+0.6)\\
+f_3&=\text{N}(X_0+a_3X_3,(1+a^2_1+a^2_2)-1)\\
+\end{aligned}
+$$
+
+```{r,include=FALSE,cache=TRUE}
+# noise1<-rnorm(n,0.8,0.4)
+# noise2 <- rnorm(n,0.5,0.5)
+# noise3 <- rnorm(n,1,0.2)
+
+Y       <- vars %*% coefs + rnorm(n = n)
+means4 <- sds4 <- matrix(NA, nrow = length(Y), ncol = 3)
+
+for(i in 1:ncol(means4)){
+  ind <- 1:4 %in% c(1, i+1)
+  means4[,i]  <- vars[, ind] %*% coefs[ind]
+  # means[,i]  <- vars[, ind] %*% coefs[ind]+noise1*(i==1)+noise2*(i==2)+noise3*(i==3)
+  sds4[,i]    <- sqrt(1 + sum(coefs[!ind]^2)+(-0.8*(i==1))+(0.6*(i==2))+(-1*(i==3)))
+}
+
+# TLP (Traditional linear pool) combination -----------------------------------
+# Simple linear combination of forecasts
+weights_TLP4<-get_TLPpars(means4,sds4)
+
+# BLP (Beta-transformed linear pool) combination ------------------------------
+par_BLP4<-get_BLPpars(means4,sds4)
+weights_BLP4<-par_BLP4[-c(1:2)]
+ab4<-par_BLP4[c(1:2)]
+
+# NBLP (Beta-transformed linear pool) combination ------------------------------
+par_nBLP4<-get_nBLPpars(means4,sds4)
+weights_nBLP4<-par_nBLP4[-c(1:3)]
+abc4<-par_nBLP4[c(1:3)]
+
+# component-specific BLP (Beta-transformed linear pool) combination ------------------------------
+comp_bpars4<-matrix(NA,ncol=2,nrow=3)
+for(i in 1:3){
+  ab4<-get_indBLPpars(means4,sds4,i)
+  comp_bpars4[i,1]<-ab4[1]
+  comp_bpars4[i,2]<-ab4[2]
+}
+
+# BLP components in BLP
+par_cBLP4<-get_cBLPpars(means4,sds4,comp_bpars4)
+weights_cBLP4<-par_cBLP4[-c(1:2)]
+cBLP_ab4<-par_cBLP4[c(1:2)]
+```
+
+
+```{r, include=FALSE}
+# Evaluation ------------------------------------------------------------------
+table4 <-make_table(forecast_names,weights_TLP4,par_BLP4,par_nBLP4,par_cBLP4)
+
+mls4 <- make_ls(forecast_names,Y,means4,sds4,weights_TLP4,par_BLP4,par_nBLP4,par_cBLP4,comp_bpars4)
+
+var4<-make_var(forecast_names,Y,means4,sds4,weights_TLP4,par_BLP4,par_nBLP4,par_cBLP4,comp_bpars4)
+```
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap=""}
+knitr::kable(list(table4,mls4,var4), "latex", booktabs = T,caption = "Model Parameters and Log Score") %>%
+   kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+\clearpage
+
+```{r, fig.align="center",fig.pos='H',message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+par(mfrow = c(2,3))
+plot_PITs(Y,means4,sds4,weights_TLP4,par_BLP4,par_nBLP4,par_cBLP4,comp_bpars4)
+```
+
+## Comments
+
+- BLP, nBLP, and cBLP outperforms TLP based on log score and probabilistic calibration in most scenarios.
+- cBLP does better when all or most components are underdispersed. The last scenario where the sharpest component is underdispersed cBLP also does well probably because it's able to fix the dispersion of the sharp component and then assign the most weight to that component.
