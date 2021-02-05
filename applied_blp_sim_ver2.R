@@ -81,49 +81,63 @@ make_ensemble <- function(ensemble_name, K, M, train_indices, truths, component_
   else if(grepl("BMC",ensemble_name,fixed = TRUE) && !grepl("EW-BMC",ensemble_name,fixed = TRUE)){
     model_type <- "
     data {
-    int<lower=0> n;
-    int<lower=0> K;
-    int<lower=0> M;
-    vector<lower=0>[K] alpha_w;
-    vector<lower=0>[M] alpha_omega;
-    matrix[n,M] comp_pits;
-    matrix[n,M] comp_prepits;
+      int<lower=0> n;
+      int<lower=0> K;
+      int<lower=0> M;
+      vector<lower=0>[K] alpha_w;
+      vector<lower=0>[M] alpha_omega;
+      matrix[n,M] comp_pits;
+      matrix[n,M] comp_prepits;
     }
 
     parameters {
-    vector<lower=0, upper=1>[K] mu;
-    vector<lower=0>[K] nu;
-    simplex[M] omega_k[K];
-    simplex[K] w;
+      vector<lower=0, upper=1>[K] mu;
+      vector<lower=0>[K] nu;
+      simplex[M] omega_k[K];
+      simplex[K] w;
     }
 
     model {
-    matrix[n, K] H_a;
-    matrix[n, K] H_b;
-    vector[K] log_weighted_mixt_cdf_a;
-    vector[K] log_weighted_mixt_cdf_b;
-    vector[K] log_w = log(w);
-    // priors
-    for (k in 1:K) {
-    mu[k] ~ beta(2, 2);
-    nu[k] ~ gamma(0.1, 0.1);
-    omega_k[k] ~ dirichlet(alpha_omega);
-    }
-    w ~ dirichlet(alpha_w);
+      matrix[n, K] H_a;
+      matrix[n, K] H_b;
+      vector[K] log_weighted_mixt_cdf_a;
+      vector[K] log_weighted_mixt_cdf_b;
+      vector[K] log_w = log(w);
+      // priors
+      for (k in 1:K) {
+        mu[k] ~ beta(2, 2);
+        nu[k] ~ gamma(0.1, 0.1);
+        omega_k[k] ~ dirichlet(alpha_omega);
+      }
+      w ~ dirichlet(alpha_w);
 
-    for (k in 1:K) {
-    H_a[, k] = comp_pits*omega_k[k];
-    H_b[, k] = comp_prepits*omega_k[k];
-    }
-    for (i in 1:n) {
-    log_weighted_mixt_cdf_a = log_w;
-    log_weighted_mixt_cdf_b = log_w;
-    for (k in 1:K) {
-    log_weighted_mixt_cdf_a[k] += beta_proportion_lcdf(H_a[i, k] | mu[k], nu[k]);
-    log_weighted_mixt_cdf_b[k] += beta_proportion_lcdf(H_b[i, k] | mu[k], nu[k]);
-    }
-    target += log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b));
-    }
+      for (k in 1:K) {
+        H_a[, k] = comp_pits*omega_k[k];
+        H_b[, k] = comp_prepits*omega_k[k];
+      }
+      //print(\"omega_k[1] = \");
+      //print(omega_k[1]);
+      //print(\"Hs = \");
+      //print(H_a);
+      //print(H_b);
+      for (i in 1:n) {
+        //print(\"i = \", i);
+        //print(\"Hs: \");
+        //print(H_a[i, ]);
+        //print(H_b[i, ]);
+        log_weighted_mixt_cdf_a = log_w;
+        log_weighted_mixt_cdf_b = log_w;
+        for (k in 1:K) {
+          //print(\"k = \", k, \"mu = \", mu[k], \", nu = \", nu[k]);
+          //print(\"offending term a = \", beta_proportion_lcdf(H_a[i, k] | mu[k], nu[k]));
+          //print(\"offending term b = \", beta_proportion_lcdf(H_b[i, k] | mu[k], nu[k]));
+          log_weighted_mixt_cdf_a[k] += beta_proportion_lcdf(inv_logit(H_a[i, k]) * 0.998 + 0.001 | mu[k], nu[k]);
+          log_weighted_mixt_cdf_b[k] += beta_proportion_lcdf(inv_logit(H_b[i, k]) * 0.998 + 0.001 | mu[k], nu[k]);
+        }
+        //print(log_weighted_mixt_cdf_a);
+        //print(log_weighted_mixt_cdf_b);
+        target += log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b));
+      }
     }
     "
     input_data <- list(n=length(train_indices), K=K, M=M,
