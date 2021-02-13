@@ -50,7 +50,7 @@ This markdown doesn't include BLP, EW-BLP since these can be done not using stan
 set.seed(1234)
 source("./applied_blp_sim_ver2.R")
 # -----------Scenario 0: Simulation setup -----------------------#
-n <- 1000
+n <- 2000
 forecast_names <- c("TLP", "BLP","EW", "EW-BLP",
                     "BMC2","EW-BMC2","BMC3","EW-BMC3",
                     "BMC4","EW-BMC4","BMC5","EW-BMC5")
@@ -120,22 +120,58 @@ TLP_params <- make_ensemble("TLP", K=1, M=M, ind_est, Y, comp_binned_forecasts,
                             initial_vals=list(omega=EW_params),
                             hyperpars=NULL)
 
+# make initial values
+EWBLP_init <- list(alpha=rnorm(1,1,1e-3), beta=rnorm(1,1,1e-3), w=1.0)
+dim(EWBLP_init$alpha) <- 1
+dim(EWBLP_init$beta) <- 1
+dim(EWBLP_init$w) <- 1
+BLP_init <- c(EWBLP_init,list(omega_k=TLP_params))
+dim(BLP_init$omega_k) <- c(1,3)
+
+# run 
+BLP_params <- make_ensemble("BLP", K=1,M=M, ind_est, Y, comp_binned_forecasts,
+                            initial_vals=BLP_init,
+                            hyperpars=NULL)
+EW_BLP_params <- make_ensemble("EW-BLP", K=1,M=M, ind_est, Y, comp_binned_forecasts,
+                               initial_vals=EWBLP_init, 
+                               hyperpars=NULL)
+
+# # experimental vanilla mixture
+# for(i in 2:5){
+#   K<- i
+#   w_vec_inits <- sample.int(100, size = K, replace = FALSE)
+#   init_vals_ew <- list(alpha=rnorm(K,1,1e-3),beta=rnorm(K,1,1e-3),w=w_vec_inits/sum(w_vec_inits))
+#   init_vals <- c(init_vals_ew, omega_k=t(replicate(K, TLP_params)))
+#   hyperpars <- list(alpha_w=rep(1.0,K),alpha_omega=rep(1.0,M))
+#   assign(paste0("BM",i,"_params"),
+#          make_ensemble("BLP", K=K,M=M, ind_est, Y, comp_binned_forecasts,
+#                        initial_vals=init_vals,hyperpars=NULL)
+#          )
+#   assign(paste0("EW_BM",i,"_params"),
+#          make_ensemble("EW-BLP", K=K,M=M, ind_est, Y, comp_binned_forecasts,
+#                        initial_vals=init_vals_ew,hyperpars=NULL)
+#          )
+# }
+
+
 # BMC/EW-BMC --------------------------------------------------------------------------
-# not including EW-BMC in the function currently since we have yet to make this converge
-# Just try with BMC2 for now
-for(mix_ens in forecast_names[5]){
+for(mix_ens in forecast_names[5:12]){
   K<- as.numeric(substring(mix_ens,nchar(mix_ens)))
   w_vec_inits <- sample.int(100, size = K, replace = FALSE)
   init_vals <- list(mu=rnorm(K,0.5,1e-3),nu=rnorm(K,2,1e-3),w=w_vec_inits/sum(w_vec_inits))
   if(!(grepl(mix_ens,"EW",fixed = TRUE))){
     init_vals[["omega_k"]] <- t(replicate(K, TLP_params))
     } 
-  hyperpars <- list(alpha_w=rep(1.0,K),alpha_omega=rep(1.0,M),omega_ew=rep(1/M,M))
+  hyperpars <- list(alpha_w=rep(1.0,K),alpha_omega=rep(1.0,M))
   assign(paste0(mix_ens,"_params"),
          make_ensemble(mix_ens, K=K,M=M, ind_est, Y, comp_binned_forecasts,
                        initial_vals=init_vals,hyperpars=hyperpars)
          )
-  }
+}
+
+# params_list <- list(BLP_params, EW_BLP_params, BMC2_params, BMC3_params, BMC4_params,BMC5_params,
+#                     `EW-BMC2_params`, `EW-BMC3_params`, `EW-BMC4_params`, `EW-BMC5_params`)
+# save(params_list, file="./Renvir/run2.RData")
 ```
 
 ```{r, include=FALSE}
