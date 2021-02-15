@@ -89,8 +89,8 @@ make_ensemble <- function(ensemble_name, K, M, train_indices, truths, component_
     }
 
     parameters {
-      vector<lower=0>[K] alpha;
-      vector<lower=0>[K] beta;
+      vector<lower=0.0001>[K] alpha;
+      vector<lower=0.0001>[K] beta;
       simplex[M] omega_k[K];
       simplex[K] w;
     }
@@ -110,8 +110,15 @@ make_ensemble <- function(ensemble_name, K, M, train_indices, truths, component_
         log_weighted_mixt_cdf_a = log_w;
         log_weighted_mixt_cdf_b = log_w;
         for (k in 1:K) {
-          log_weighted_mixt_cdf_a[k] += beta_lcdf((H_a[i, k] * 0.998) + 0.0009| alpha[k], beta[k]);
-          log_weighted_mixt_cdf_b[k] += beta_lcdf((H_b[i, k] * 0.998) + 0.0009| alpha[k], beta[k]);
+          print(\"i = \", i);
+          print(\"Hs: \");
+          print(H_a[i, k]);
+          print(H_b[i, k]);
+          print(\"Hs_truncated: \");
+          print((H_a[i, k]*0.995) + 0.001);
+          print((H_b[i, k]*0.995) + 0.001);
+          log_weighted_mixt_cdf_a[k] += beta_lcdf((H_a[i, k] * 0.9949) + 0.0009| alpha[k], beta[k]);
+          log_weighted_mixt_cdf_b[k] += beta_lcdf((H_b[i, k] * 0.9949) + 0.0009| alpha[k], beta[k]);
         }
         target += log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b));
       }
@@ -136,8 +143,8 @@ make_ensemble <- function(ensemble_name, K, M, train_indices, truths, component_
       vector[n] H_b = comp_prepits*omega;
     }
     parameters {
-      vector<lower=0>[K] alpha;
-      vector<lower=0>[K] beta;
+      vector<lower=0.0001>[K] alpha;
+      vector<lower=0.0001>[K] beta;
       simplex[K] w;
     }
 
@@ -150,8 +157,15 @@ make_ensemble <- function(ensemble_name, K, M, train_indices, truths, component_
         log_weighted_mixt_cdf_a = log_w;
         log_weighted_mixt_cdf_b = log_w;
         for (k in 1:K) {
-          log_weighted_mixt_cdf_a[k] += beta_lcdf((H_a[i] * 0.998) + 0.0009| alpha[k], beta[k]);
-          log_weighted_mixt_cdf_b[k] += beta_lcdf((H_b[i] * 0.998) + 0.0009| alpha[k], beta[k]);
+          print(\"i = \", i);
+          print(\"Hs: \");
+          print(H_a[i]);
+          print(H_b[i]);
+          print(\"Hs_truncated: \");
+          print((H_a[i]*0.995) + 0.001);
+          print((H_b[i]*0.995) + 0.001);
+          log_weighted_mixt_cdf_a[k] += beta_lcdf((H_a[i] * 0.9949) + 0.0009| alpha[k], beta[k]);
+          log_weighted_mixt_cdf_b[k] += beta_lcdf((H_b[i] * 0.9949) + 0.0009| alpha[k], beta[k]);
         }
         target += log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b));
       }
@@ -198,30 +212,30 @@ make_ensemble <- function(ensemble_name, K, M, train_indices, truths, component_
         H_a[, k] = comp_pits*omega_k[k];
         H_b[, k] = comp_prepits*omega_k[k];
       }
-      print(\"omega_k[1] = \");
-      print(omega_k[1]);
-      print(\"Hs = \");
-      print(H_a);
-      print(H_b);
+      //print(\"omega_k[1] = \");
+      //print(omega_k[1]);
+      //print(\"Hs = \");
+      //print(H_a);
+      //print(H_b);
       for (i in 1:n) {
-        print(\"i = \", i);
-        print(\"Hs: \");
-        print(H_a[i, ]);
-        print(H_b[i, ]);
+        //print(\"i = \", i);
+        //print(\"Hs: \");
+        //print(H_a[i, ]);
+        //print(H_b[i, ]);
         log_weighted_mixt_cdf_a = log_w;
         log_weighted_mixt_cdf_b = log_w;
         for (k in 1:K) {
-          print(\"k = \", k, \"mu = \", mu[k], \", nu = \", nu[k]);
-          print(\"offending term a = \", beta_proportion_lcdf((H_a[i, k] * 0.998) + 0.0009| mu[k], nu[k]));
-          print(\"offending term b = \", beta_proportion_lcdf((H_a[i, k] * 0.998) + 0.0009 | mu[k], nu[k]));
+          //print(\"k = \", k, \"mu = \", mu[k], \", nu = \", nu[k]);
+          //print(\"offending term a = \", beta_proportion_lcdf((H_a[i, k] * 0.998) + 0.0009| mu[k], nu[k]));
+          //print(\"offending term b = \", beta_proportion_lcdf((H_a[i, k] * 0.998) + 0.0009 | mu[k], nu[k]));
           log_weighted_mixt_cdf_a[k] += beta_proportion_lcdf((H_a[i, k] * 0.998) + 0.0009| mu[k], nu[k]);
           log_weighted_mixt_cdf_b[k] += beta_proportion_lcdf((H_b[i, k] * 0.998) + 0.0009| mu[k], nu[k]);
         }
-        print(\"log_mixt_cdf_a = \",log_weighted_mixt_cdf_a);
-        print(\"log_mixt_cdf_b = \",log_weighted_mixt_cdf_b);
-        print(\"log_sum_exp_a = \",log_sum_exp(log_weighted_mixt_cdf_a));
-        print(\"log_sum_exp_b = \",log_sum_exp(log_weighted_mixt_cdf_b));
-        print(\"log_diff_exp = \",log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b)));
+        //print(\"log_mixt_cdf_a = \",log_weighted_mixt_cdf_a);
+        //print(\"log_mixt_cdf_b = \",log_weighted_mixt_cdf_b);
+        //print(\"log_sum_exp_a = \",log_sum_exp(log_weighted_mixt_cdf_a));
+        //print(\"log_sum_exp_b = \",log_sum_exp(log_weighted_mixt_cdf_b));
+        //print(\"log_diff_exp = \",log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b)));
         target += log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b));
       }
     }
@@ -263,24 +277,24 @@ make_ensemble <- function(ensemble_name, K, M, train_indices, truths, component_
     }
     w ~ dirichlet(alpha_w);
     for (i in 1:n) {
-    print(\"i = \", i);
-    print(\"Hs: \");
-    print(H_a[i]);
-    print(H_b[i]);
+    //print(\"i = \", i);
+    //print(\"Hs: \");
+    //print(H_a[i]);
+    //print(H_b[i]);
     log_weighted_mixt_cdf_a = log_w;
     log_weighted_mixt_cdf_b = log_w;
     for (k in 1:K) {
-    print(\"k = \", k, \"mu = \", mu[k], \", nu = \", nu[k]);
-    print(\"offending term a = \", beta_proportion_lcdf((H_a[i] * 0.998) + 0.0009 | mu[k], nu[k]));
-    print(\"offending term b = \", beta_proportion_lcdf((H_a[i] * 0.998) + 0.0009 | mu[k], nu[k]));
+    //print(\"k = \", k, \"mu = \", mu[k], \", nu = \", nu[k]);
+    //print(\"offending term a = \", beta_proportion_lcdf((H_a[i] * 0.998) + 0.0009 | mu[k], nu[k]));
+    //print(\"offending term b = \", beta_proportion_lcdf((H_a[i] * 0.998) + 0.0009 | mu[k], nu[k]));
     log_weighted_mixt_cdf_a[k] += beta_proportion_lcdf((H_a[i] * 0.998) + 0.0009| mu[k], nu[k]);
     log_weighted_mixt_cdf_b[k] += beta_proportion_lcdf((H_b[i] * 0.998) + 0.0009| mu[k], nu[k]);
     }
-    print(\"log_mixt_cdf_a = \",log_weighted_mixt_cdf_a);
-    print(\"log_mixt_cdf_b = \",log_weighted_mixt_cdf_b);
-    print(\"log_sum_exp_a = \",log_sum_exp(log_weighted_mixt_cdf_a));
-    print(\"log_sum_exp_b = \",log_sum_exp(log_weighted_mixt_cdf_b));
-    print(\"log_diff_exp = \",log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b)));
+    //print(\"log_mixt_cdf_a = \",log_weighted_mixt_cdf_a);
+    //print(\"log_mixt_cdf_b = \",log_weighted_mixt_cdf_b);
+    //print(\"log_sum_exp_a = \",log_sum_exp(log_weighted_mixt_cdf_a));
+    //print(\"log_sum_exp_b = \",log_sum_exp(log_weighted_mixt_cdf_b));
+    //print(\"log_diff_exp = \",log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b)));
     target += log_diff_exp(log_sum_exp(log_weighted_mixt_cdf_a), log_sum_exp(log_weighted_mixt_cdf_b));
     }
     }

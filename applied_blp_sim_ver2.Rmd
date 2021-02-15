@@ -1,7 +1,7 @@
 ---
 title: "Comparison of Ensemble Recalibration Methods in Flu Forecasting 2"
 author: "Nutcha Wattanachit"
-date: "02/03/2021"
+date: "02/15/2021"
 header-includes:
    - \usepackage{booktabs}
    - \usepackage{tabularx}
@@ -136,38 +136,39 @@ EW_BLP_params <- make_ensemble("EW-BLP", K=1,M=M, ind_est, Y, comp_binned_foreca
                                initial_vals=EWBLP_init, 
                                hyperpars=NULL)
 
-# # experimental vanilla mixture
-# for(i in 2:5){
-#   K<- i
-#   w_vec_inits <- sample.int(100, size = K, replace = FALSE)
-#   init_vals_ew <- list(alpha=rnorm(K,1,1e-3),beta=rnorm(K,1,1e-3),w=w_vec_inits/sum(w_vec_inits))
-#   init_vals <- c(init_vals_ew, omega_k=t(replicate(K, TLP_params)))
-#   hyperpars <- list(alpha_w=rep(1.0,K),alpha_omega=rep(1.0,M))
-#   assign(paste0("BM",i,"_params"),
-#          make_ensemble("BLP", K=K,M=M, ind_est, Y, comp_binned_forecasts,
-#                        initial_vals=init_vals,hyperpars=NULL)
-#          )
-#   assign(paste0("EW_BM",i,"_params"),
-#          make_ensemble("EW-BLP", K=K,M=M, ind_est, Y, comp_binned_forecasts,
-#                        initial_vals=init_vals_ew,hyperpars=NULL)
-#          )
-# }
-
-
-# BMC/EW-BMC --------------------------------------------------------------------------
-for(mix_ens in forecast_names[5:12]){
-  K<- as.numeric(substring(mix_ens,nchar(mix_ens)))
+# experimental vanilla mixture
+#for(i in 2:5){
+for(i in 4:5){
+  K<- i
   w_vec_inits <- sample.int(100, size = K, replace = FALSE)
-  init_vals <- list(mu=rnorm(K,0.5,1e-3),nu=rnorm(K,2,1e-3),w=w_vec_inits/sum(w_vec_inits))
-  if(!(grepl(mix_ens,"EW",fixed = TRUE))){
-    init_vals[["omega_k"]] <- t(replicate(K, TLP_params))
-    } 
+  init_vals_ew <- list(alpha=rnorm(K,1,1e-3),beta=rnorm(K,1,1e-3),w=w_vec_inits/sum(w_vec_inits))
+  init_vals <- c(init_vals_ew, omega_k=t(replicate(K, TLP_params)))
   hyperpars <- list(alpha_w=rep(1.0,K),alpha_omega=rep(1.0,M))
-  assign(paste0(mix_ens,"_params"),
-         make_ensemble(mix_ens, K=K,M=M, ind_est, Y, comp_binned_forecasts,
-                       initial_vals=init_vals,hyperpars=hyperpars)
+  assign(paste0("BM",i,"_params"),
+         make_ensemble("BLP", K=K,M=M, ind_est, Y, comp_binned_forecasts,
+                       initial_vals=init_vals,hyperpars=NULL)
+         )
+  assign(paste0("EW_BM",i,"_params"),
+         make_ensemble("EW-BLP", K=K,M=M, ind_est, Y, comp_binned_forecasts,
+                       initial_vals=init_vals_ew,hyperpars=NULL)
          )
 }
+
+
+# # BMC/EW-BMC --------------------------------------------------------------------------
+# for(mix_ens in forecast_names[5:12]){
+#   K<- as.numeric(substring(mix_ens,nchar(mix_ens)))
+#   w_vec_inits <- sample.int(100, size = K, replace = FALSE)
+#   init_vals <- list(mu=rnorm(K,0.5,1e-3),nu=rnorm(K,2,1e-3),w=w_vec_inits/sum(w_vec_inits))
+#   if(!(grepl(mix_ens,"EW",fixed = TRUE))){
+#     init_vals[["omega_k"]] <- t(replicate(K, TLP_params))
+#     } 
+#   hyperpars <- list(alpha_w=rep(1.0,K),alpha_omega=rep(1.0,M))
+#   assign(paste0(mix_ens,"_params"),
+#          make_ensemble(mix_ens, K=K,M=M, ind_est, Y, comp_binned_forecasts,
+#                        initial_vals=init_vals,hyperpars=hyperpars)
+#          )
+# }
 
 # params_list <- list(BLP_params, EW_BLP_params, BMC2_params, BMC3_params, BMC4_params,BMC5_params,
 #                     `EW-BMC2_params`, `EW-BMC3_params`, `EW-BMC4_params`, `EW-BMC5_params`)
