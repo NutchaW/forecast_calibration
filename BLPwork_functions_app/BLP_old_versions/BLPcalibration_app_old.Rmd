@@ -1,0 +1,347 @@
+---
+title: "BLP Work"
+author: "Nutcha Wattanachit"
+date: "09/07/2020"
+tables: yes
+header-includes:
+   - \usepackage{booktabs}
+   - \usepackage{tabularx}
+   - \usepackage{hyperref}
+   - \usepackage{multicol}
+   - \usepackage{longtable}
+   - \usepackage{array}
+   - \usepackage{multirow}
+   - \usepackage{wrapfig}
+   - \usepackage{float}
+   - \usepackage{colortbl}
+   - \usepackage{pdflscape}
+   - \usepackage{tabu}
+   - \usepackage{threeparttable}
+   - \usepackage{threeparttablex}
+   - \usepackage{makecell}
+   - \usepackage{xcolor}
+output:
+  pdf_document:
+        keep_tex: true
+        latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+library(tidyverse);library(cdcfluview);library(Matrix)
+library(cowplot);library(data.table);library(reshape2)
+library(gridExtra);library(ranger);library(xtable)
+library(here);library(stats);library(mixtools)
+library(ggforce);library(grid);library(FluSight)
+library(rmutil);library(R.utils);library(knitr)
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, comment = FALSE, message=FALSE, fig.show= 'hold')
+```
+
+# Flu Forecasting Application
+## Training seasons
+
+```{r, echo=FALSE}
+source("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPwork_functions_app_app/functions_app.R")
+```
+
+```{r,cache=TRUE}
+# BLP inputs
+# info
+targets<-c("1 wk ahead","2 wk ahead","3 wk ahead","4 wk ahead")
+model_list<-c("CU_EAKFC_SEIRS","CU_EAKFC_SIRS","CU_EKF_SEIRS","CU_EKF_SIRS","CU_RHF_SEIRS","CU_RHF_SIRS","CUBMA",
+              "Delphi_BasisRegression","Delphi_EmpiricalFutures","Delphi_EmpiricalTrajectories", "Delphi_ExtendedDeltaDensity",
+              "Delphi_MarkovianDeltaDensity", "Delphi_Uniform", "LANL_DBMplus", "Protea_Cheetah", "Protea_Kudu",
+              "Protea_Springbok", "ReichLab_kcde", "ReichLab_kde", "ReichLab_sarima_seasonal_difference_FALSE",
+              "ReichLab_sarima_seasonal_difference_TRUE", "target-based-weights")
+componentModel_list<-model_list[-22]
+model_list_sc<-c("CU-BMA","CU-EAKFC_SEIRS","CU-EAKFC_SIRS", "CU-EKF_SEIRS", "CU-EKF_SIRS", "CU-RHF_SEIRS", "CU-RHF_SIRS",
+                 "Delphi-BasisRegression", "Delphi-EmpiricalFuture", "Delphi-EmpiricalTraj", "Delphi-DeltaDensity1",
+                 "Delphi-DeltaDensity2", "Delphi-Uniform", "LANL-DBMplus", "Protea Analytics-Cheetah", "Protea Analytics-Kudu",
+                 "Protea Analytics-Springbok", "ReichLab-KCDE", "ReichLab-KDE", "ReichLab-SARIMA1", "ReichLab-SARIMA2",
+                 "FSNetwork-CW", "FSNetwork-EW", "FSNetwork-TRW", "FSNetwork-TW", "FSNetwork-TTW")
+train_season<-c("2010/2011","2011/2012","2012/2013","2013/2014","2014/2015","2015/2016","2016/2017")
+testSeasons<-c("2017/2018","2018/2019")
+scores<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/scores/scores_1819.csv")
+truths<-read.csv('/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/scores/target-multivals_1819.csv') %>%
+  dplyr::filter(Target %in% targets, Calendar.Week %in% c(43:53,1:18))
+
+## combine log scores and pit for forecasts
+## pit
+dir <- "/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/"
+for(i in 1:4){
+  for(j in 1:7){
+  assign(paste0("BLP_t",i,"S",j),
+         read.csv(
+           paste0(dir,"BLP/BLP_pit_t",i,"S",j,".csv")))
+    assign(paste0("nBLP_t",i,"S",j),
+         read.csv(
+           paste0(dir,"nBLP/nBLP_pit_t",i,"S",j,".csv")))
+      assign(paste0("cBLP_t",i,"S",j),
+         read.csv(
+           paste0(dir,"cBLP/cBLP_pit_t",i,"S",j,".csv")))
+  }
+}
+# BLP
+BLP<-rbind(BLP_t1S1,BLP_t1S2,BLP_t1S3,BLP_t1S4,BLP_t1S5,BLP_t1S6,BLP_t1S7,
+           BLP_t2S1,BLP_t2S2,BLP_t2S3,BLP_t2S4,BLP_t2S5,BLP_t1S6,BLP_t2S7,
+           BLP_t3S1,BLP_t3S2,BLP_t3S3,BLP_t3S4,BLP_t3S5,BLP_t1S6,BLP_t3S7,
+           BLP_t4S1,BLP_t4S2,BLP_t4S3,BLP_t4S4,BLP_t4S5,BLP_t1S6,BLP_t4S7)
+BLP$model_name<-"BLP"
+BLP <- BLP %>% dplyr::select(-"value")
+BLP<-BLP[,c(6,1:5)]
+# nBLP
+nBLP<-rbind(nBLP_t1S1,nBLP_t1S2,nBLP_t1S3,nBLP_t1S4,nBLP_t1S5,nBLP_t1S6,nBLP_t1S7,
+           nBLP_t2S1,nBLP_t2S2,nBLP_t2S3,nBLP_t2S4,nBLP_t2S5,nBLP_t1S6,nBLP_t2S7,
+           nBLP_t3S1,nBLP_t3S2,nBLP_t3S3,nBLP_t3S4,nBLP_t3S5,nBLP_t1S6,nBLP_t3S7,
+           nBLP_t4S1,nBLP_t4S2,nBLP_t4S3,nBLP_t4S4,nBLP_t4S5,nBLP_t1S6,nBLP_t4S7)
+nBLP$model_name<-"nBLP"
+nBLP <- nBLP %>% dplyr::select(-"value")
+nBLP<-nBLP[,c(6,1:5)]
+# cBLP
+cBLP<-rbind(cBLP_t1S1,cBLP_t1S2,cBLP_t1S3,cBLP_t1S4,cBLP_t1S5,cBLP_t1S6,cBLP_t1S7,
+           cBLP_t2S1,cBLP_t2S2,cBLP_t2S3,cBLP_t2S4,cBLP_t2S5,cBLP_t1S6,cBLP_t2S7,
+           cBLP_t3S1,cBLP_t3S2,cBLP_t3S3,cBLP_t3S4,cBLP_t3S5,cBLP_t1S6,cBLP_t3S7,
+           cBLP_t4S1,cBLP_t4S2,cBLP_t4S3,cBLP_t4S4,cBLP_t4S5,cBLP_t1S6,cBLP_t4S7)
+cBLP$model_name<-"cBLP"
+cBLP <- cBLP %>% dplyr::select(-"value")
+cBLP<-cBLP[,c(6,1:5)]
+FSN_TW<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/pit/combined_pit.csv") %>%
+  dplyr::filter(season %in% train_season,model_name=="target-based-weights") 
+FSN_TW$model_name<-"FSN-TW"
+names(FSN_TW)[6]<-"pit"
+combined_PIT<-rbind(BLP,nBLP,cBLP,FSN_TW)
+
+## log score
+BLP_ls<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/BLP/BLP_ls.csv") %>%
+  dplyr::select(-"value",-"Valid.Bin_start_incl",-"bin_end_notincl") %>%
+  dplyr::mutate(Model="BLP")
+names(BLP_ls)[7]<-"Score"
+BLP_ls<-BLP_ls[,c(8,1:7)]
+nBLP_ls<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/nBLP/nBLP_ls.csv")%>%
+  dplyr::select(-"value",-"Valid.Bin_start_incl",-"bin_end_notincl") %>%
+  dplyr::mutate(Model="nBLP")
+names(nBLP_ls)[7]<-"Score"
+nBLP_ls<-nBLP_ls[,c(8,1:7)]
+cBLP_ls<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/cBLP/cBLP_ls.csv")%>%
+  dplyr::select(-"value",-"Valid.Bin_start_incl",-"bin_end_notincl") %>%
+  dplyr::mutate(Model="cBLP")
+names(cBLP_ls)[7]<-"Score"
+cBLP_ls<-cBLP_ls[,c(8,1:7)]
+FSN_TW_ls<-scores %>%
+  dplyr::filter(Model == "FSNetwork-TW", Season %in% train_season, Target %in% targets) %>%
+  dplyr::select(-"Multi.bin.score")
+names(FSN_TW_ls)[3]<-"Calendar.Week"
+combined_LS<-rbind(BLP_ls,nBLP_ls,cBLP_ls,FSN_TW_ls)
+```
+
+### 1 Week Ahead Calibration 
+
+```{r}
+pitplot(combined_PIT,targets[1],train_season[1])
+pitplot(combined_PIT,targets[1],train_season[2])
+pitplot(combined_PIT,targets[1],train_season[3])
+pitplot(combined_PIT,targets[1],train_season[4])
+pitplot(combined_PIT,targets[1],train_season[5])
+pitplot(combined_PIT,targets[1],train_season[6])
+pitplot(combined_PIT,targets[1],train_season[7])
+```
+
+### 2 Week Ahead Calibration 
+
+```{r}
+pitplot(combined_PIT,targets[2],train_season[1])
+pitplot(combined_PIT,targets[2],train_season[2])
+pitplot(combined_PIT,targets[2],train_season[3])
+pitplot(combined_PIT,targets[2],train_season[4])
+pitplot(combined_PIT,targets[2],train_season[5])
+pitplot(combined_PIT,targets[2],train_season[6])
+pitplot(combined_PIT,targets[2],train_season[7])
+```
+
+### 3 Week Ahead Calibration 
+
+```{r}
+pitplot(combined_PIT,targets[3],train_season[1])
+pitplot(combined_PIT,targets[3],train_season[2])
+pitplot(combined_PIT,targets[3],train_season[3])
+pitplot(combined_PIT,targets[3],train_season[4])
+pitplot(combined_PIT,targets[3],train_season[5])
+pitplot(combined_PIT,targets[3],train_season[6])
+pitplot(combined_PIT,targets[3],train_season[7])
+```
+
+### 4 Week Ahead Calibration 
+
+```{r}
+pitplot(combined_PIT,targets[4],train_season[1])
+pitplot(combined_PIT,targets[4],train_season[2])
+pitplot(combined_PIT,targets[4],train_season[3])
+pitplot(combined_PIT,targets[4],train_season[4])
+pitplot(combined_PIT,targets[4],train_season[5])
+pitplot(combined_PIT,targets[4],train_season[6])
+pitplot(combined_PIT,targets[4],train_season[7])
+```
+
+### Log Scores
+
+#### 1 Week Ahead
+
+```{r}
+LStable_target(combined_LS,targets[1])
+```
+
+#### 2 Week Ahead
+
+```{r}
+LStable_target(combined_LS,targets[2])
+```
+
+#### 3 Week Ahead
+
+```{r}
+LStable_target(combined_LS,targets[3])
+```
+
+#### 4 Week Ahead
+
+```{r}
+LStable_target(combined_LS,targets[4])
+```
+
+#### Across All Targets
+
+```{r}
+LStable(combined_LS)
+```
+
+# Test seasons
+
+```{r,cache=TRUE}
+# BLP inputs
+## combine log scores and pit for forecasts
+## pit
+dir <- "/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/"
+for(i in 1:4){
+  for(j in 1:7){
+  assign(paste0("BLP_t",i,"S",j),
+         read.csv(
+           paste0(dir,"BLP/BLP_pit_t",i,"S",j,".csv")))
+    assign(paste0("nBLP_t",i,"S",j),
+         read.csv(
+           paste0(dir,"nBLP/nBLP_pit_t",i,"S",j,".csv")))
+      assign(paste0("cBLP_t",i,"S",j),
+         read.csv(
+           paste0(dir,"cBLP/cBLP_pit_t",i,"S",j,".csv")))
+  }
+}
+# BLP
+BLP<-rbind(BLP_t1S1,BLP_t1S2,BLP_t1S3,BLP_t1S4,BLP_t1S5,BLP_t1S6,BLP_t1S7,
+           BLP_t2S1,BLP_t2S2,BLP_t2S3,BLP_t2S4,BLP_t2S5,BLP_t1S6,BLP_t2S7,
+           BLP_t3S1,BLP_t3S2,BLP_t3S3,BLP_t3S4,BLP_t3S5,BLP_t1S6,BLP_t3S7,
+           BLP_t4S1,BLP_t4S2,BLP_t4S3,BLP_t4S4,BLP_t4S5,BLP_t1S6,BLP_t4S7)
+BLP$model_name<-"BLP"
+BLP <- BLP %>% dplyr::select(-"value")
+BLP<-BLP[,c(6,1:5)]
+# nBLP
+nBLP<-rbind(nBLP_t1S1,nBLP_t1S2,nBLP_t1S3,nBLP_t1S4,nBLP_t1S5,nBLP_t1S6,nBLP_t1S7,
+           nBLP_t2S1,nBLP_t2S2,nBLP_t2S3,nBLP_t2S4,nBLP_t2S5,nBLP_t1S6,nBLP_t2S7,
+           nBLP_t3S1,nBLP_t3S2,nBLP_t3S3,nBLP_t3S4,nBLP_t3S5,nBLP_t1S6,nBLP_t3S7,
+           nBLP_t4S1,nBLP_t4S2,nBLP_t4S3,nBLP_t4S4,nBLP_t4S5,nBLP_t1S6,nBLP_t4S7)
+nBLP$model_name<-"nBLP"
+nBLP <- nBLP %>% dplyr::select(-"value")
+nBLP<-nBLP[,c(6,1:5)]
+# cBLP
+cBLP<-rbind(cBLP_t1S1,cBLP_t1S2,cBLP_t1S3,cBLP_t1S4,cBLP_t1S5,cBLP_t1S6,cBLP_t1S7,
+           cBLP_t2S1,cBLP_t2S2,cBLP_t2S3,cBLP_t2S4,cBLP_t2S5,cBLP_t1S6,cBLP_t2S7,
+           cBLP_t3S1,cBLP_t3S2,cBLP_t3S3,cBLP_t3S4,cBLP_t3S5,cBLP_t1S6,cBLP_t3S7,
+           cBLP_t4S1,cBLP_t4S2,cBLP_t4S3,cBLP_t4S4,cBLP_t4S5,cBLP_t1S6,cBLP_t4S7)
+cBLP$model_name<-"cBLP"
+cBLP <- cBLP %>% dplyr::select(-"value")
+cBLP<-cBLP[,c(6,1:5)]
+FSN_TW<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/pit/combined_pit.csv") %>%
+  dplyr::filter(season %in% train_season,model_name=="target-based-weights") 
+FSN_TW$model_name<-"FSN-TW"
+names(FSN_TW)[6]<-"pit"
+combined_PIT<-rbind(BLP,nBLP,cBLP,FSN_TW)
+
+## log score
+BLP_ls<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/BLP/BLP_ls.csv") %>%
+  dplyr::select(-"value",-"Valid.Bin_start_incl",-"bin_end_notincl") %>%
+  dplyr::mutate(Model="BLP")
+names(BLP_ls)[7]<-"Score"
+BLP_ls<-BLP_ls[,c(8,1:7)]
+nBLP_ls<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/nBLP/nBLP_ls.csv")%>%
+  dplyr::select(-"value",-"Valid.Bin_start_incl",-"bin_end_notincl") %>%
+  dplyr::mutate(Model="nBLP")
+names(nBLP_ls)[7]<-"Score"
+nBLP_ls<-nBLP_ls[,c(8,1:7)]
+cBLP_ls<-read.csv("/Users/ahctun_woon/git/end-of-2018-2019/cdc-flusight-ensemble/BLPdata_app/cBLP/cBLP_ls.csv")%>%
+  dplyr::select(-"value",-"Valid.Bin_start_incl",-"bin_end_notincl") %>%
+  dplyr::mutate(Model="cBLP")
+names(cBLP_ls)[7]<-"Score"
+cBLP_ls<-cBLP_ls[,c(8,1:7)]
+FSN_TW_ls<-scores %>%
+  dplyr::filter(Model == "FSNetwork-TW", Season %in% train_season, Target %in% targets) %>%
+  dplyr::select(-"Multi.bin.score")
+names(FSN_TW_ls)[3]<-"Calendar.Week"
+combined_LS<-rbind(BLP_ls,nBLP_ls,cBLP_ls,FSN_TW_ls)
+```
+
+### 1 Week Ahead Calibration 
+
+```{r}
+pitplot(combined_PIT,targets[1],train_season[1])
+pitplot(combined_PIT,targets[1],train_season[2])
+```
+
+### 2 Week Ahead Calibration 
+
+```{r}
+pitplot(combined_PIT,targets[2],train_season[1])
+pitplot(combined_PIT,targets[2],train_season[2])
+```
+
+### 3 Week Ahead Calibration 
+
+```{r}
+pitplot(combined_PIT,targets[3],train_season[1])
+pitplot(combined_PIT,targets[3],train_season[2])
+```
+
+### 4 Week Ahead Calibration 
+
+```{r}
+pitplot(combined_PIT,targets[4],train_season[1])
+pitplot(combined_PIT,targets[4],train_season[2])
+```
+
+### Log Scores
+
+#### 1 Week Ahead
+
+```{r}
+LStable_target(combined_LS,targets[1])
+```
+
+#### 2 Week Ahead
+
+```{r}
+LStable_target(combined_LS,targets[2])
+```
+
+#### 3 Week Ahead
+
+```{r}
+LStable_target(combined_LS,targets[3])
+```
+
+#### 4 Week Ahead
+
+```{r}
+LStable_target(combined_LS,targets[4])
+```
+
+#### Across All Targets
+
+```{r}
+LStable(combined_LS)
+```

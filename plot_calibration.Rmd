@@ -1,0 +1,1451 @@
+---
+title: "Application results"
+author: "Nutcha Wattanachit"
+date: "09/12/2021"
+header-includes:
+   - \usepackage{amsmath}
+   - \usepackage{tabularx}
+   - \usepackage{hyperref}
+   - \usepackage{multicol}
+   - \usepackage{longtable}
+   - \usepackage{array}
+   - \usepackage{multirow}
+   - \usepackage{wrapfig}
+   - \usepackage{float}
+   - \usepackage{colortbl}
+   - \usepackage{pdflscape}
+   - \usepackage{booktabs}
+   - \usepackage{tabu}
+   - \usepackage{threeparttable}
+   - \usepackage{threeparttablex}
+   - \usepackage{makecell}
+   - \usepackage{xcolor}
+output:
+  pdf_document:
+        keep_tex: true
+        latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(grid)
+library(scales)
+library(cdcfluview)
+library(RColorBrewer)
+library(ggpubr)
+knitr::opts_chunk$set(echo = FALSE,fig.pos = "H",fig.retina=2)
+```
+
+# Log scores
+
+## Cross-validated mean log scores for $\text{BMC}_k$ and $\text{EW-BMC}_k$
+
+Select method with log score within 1 sd of maximum (negatively oriented). So, the cutoff is max log score plus 1 se and any methods with mean validation log scores (rounded to the second decimal point) higher or equal to the cutoff (rounded to the second decimal point) will satisfy the criteria. Then, among those that make the cutoff, select one method with the lowest beta components (least complex method).
+
+```{r}
+path <- paste0(getwd(),"/calibration_work")
+seasons <- c("2010/2011","2011/2012","2012/2013","2013/2014","2014/2015","2015/2016",
+             "2016/2017","2017/2018","2018/2019")
+test_s <- seasons[7:9]
+tars  <- sapply(1:4, function(x) paste0(x," wk ahead"))
+source(paste0(path,"/BLPwork_functions_app/tables_plots_functions.R"))
+source(paste0(path,"/BLPwork_functions_app/functions_app.R"))
+## get data
+cv_scores1_all <- read.csv(paste0(path,"/ensembles/pit_ls_frame/cv/tables/sea17.csv")) %>%
+  dplyr::group_by(model_name,target) %>%
+  dplyr::mutate(mtls=mean(mean_ls_train),
+                mtest=mean(mean_ls_valid))%>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(ew_logi=ifelse(grepl("EW_BMC",model_name),1,0)) %>%
+  group_by(ew_logi,target) %>%
+  dplyr::mutate(group_sd1=sd(mtest),
+                cutoff=max(mtest)-group_sd1,
+                max_model=model_name[which.max(mtest)]) %>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(target,ew_logi) %>%
+  dplyr::mutate(rank=rank(-round(mtest,2), ties.method="min")) %>%
+  ungroup() %>%
+  dplyr::select(-"mean_ls_train",-"mean_ls_valid",-"valids",-"valid_season",-"ew_logi") %>%
+  dplyr::arrange(target) %>%
+  distinct() 
+
+cv_scores1_select <- read.csv(paste0(path,"/ensembles/pit_ls_frame/cv/tables/sea17.csv")) %>%
+  dplyr::group_by(model_name,target) %>%
+  dplyr::mutate(mtls=mean(mean_ls_train),
+                mtest=mean(mean_ls_valid))%>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(ew_logi=ifelse(grepl("EW_BMC",model_name),1,0)) %>%
+  group_by(ew_logi,target) %>%
+  dplyr::mutate(group_sd1=sd(mtest),
+                cutoff=max(mtest)-group_sd1,
+                max_model=model_name[which.max(mtest)],
+                comp=substr(model_name, nchar(model_name), nchar(model_name)))%>%
+  dplyr::filter(round(mtest,2)>=round(cutoff,2)) %>%
+  dplyr::mutate(select_model=model_name[which.min(as.numeric(comp))]) %>%
+  dplyr::filter(select_model==model_name) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(-"mean_ls_train",-"mean_ls_valid",-"valids",-"valid_season",-"mtls",-"ew_logi",-"comp") %>%
+  dplyr::arrange(target) %>%
+  dplyr::distinct()
+
+cv_scores2_all <- read.csv(paste0(path,"/ensembles/pit_ls_frame/cv/tables/sea18.csv")) %>%
+  dplyr::group_by(model_name,target) %>%
+  dplyr::mutate(mtls=mean(mean_ls_train),
+                mtest=mean(mean_ls_valid))%>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(ew_logi=ifelse(grepl("EW_BMC",model_name),1,0)) %>%
+  group_by(ew_logi,target) %>%
+  dplyr::mutate(group_sd1=sd(mtest),
+                cutoff=max(mtest)-group_sd1,
+                max_model=model_name[which.max(mtest)])%>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(target,ew_logi) %>%
+  dplyr::mutate(rank=rank(-round(mtest,2), ties.method="min")) %>%
+  ungroup() %>%
+  dplyr::select(-"mean_ls_train",-"mean_ls_valid",-"valids",-"valid_season",-"ew_logi") %>%
+  dplyr::arrange(target) %>%
+  distinct()
+
+cv_scores2_select <- read.csv(paste0(path,"/ensembles/pit_ls_frame/cv/tables/sea18.csv")) %>%
+  dplyr::group_by(model_name,target) %>%
+  dplyr::mutate(mtls=mean(mean_ls_train),
+                mtest=mean(mean_ls_valid))%>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(ew_logi=ifelse(grepl("EW_BMC",model_name),1,0)) %>%
+  group_by(ew_logi,target) %>%
+  dplyr::mutate(group_sd1=sd(mtest),
+                cutoff=max(mtest)-group_sd1,
+                max_model=model_name[which.max(mtest)],
+                comp=substr(model_name, nchar(model_name), nchar(model_name)))%>%
+  dplyr::filter(round(mtest,2)>=round(cutoff,2)) %>%
+  dplyr::mutate(select_model=model_name[which.min(as.numeric(comp))]) %>%
+  dplyr::filter(select_model==model_name) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(-"mean_ls_train",-"mean_ls_valid",-"valids",-"valid_season",-"mtls",-"ew_logi",-"comp") %>%
+  dplyr::arrange(target) %>%
+  dplyr::distinct()
+
+cv_scores3_all <- read.csv(paste0(path,"/ensembles/pit_ls_frame/cv/tables/sea19.csv")) %>%
+  dplyr::group_by(model_name,target) %>%
+  dplyr::mutate(mtls=mean(mean_ls_train),
+                mtest=mean(mean_ls_valid))%>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(ew_logi=ifelse(grepl("EW_BMC",model_name),1,0)) %>%
+  group_by(ew_logi,target) %>%
+  dplyr::mutate(group_sd1=sd(mtest),
+                cutoff=max(mtest)-group_sd1,
+                max_model=model_name[which.max(mtest)])%>%
+  dplyr::ungroup() %>%
+  dplyr::group_by(target,ew_logi) %>%
+  dplyr::mutate(rank=rank(-round(mtest,2), ties.method="min")) %>%
+  ungroup() %>%
+  dplyr::select(-"mean_ls_train",-"mean_ls_valid",-"valids",-"valid_season",-"ew_logi") %>%
+  dplyr::arrange(target) %>%
+  distinct()
+
+cv_scores3_select <- read.csv(paste0(path,"/ensembles/pit_ls_frame/cv/tables/sea19.csv")) %>%
+  dplyr::group_by(model_name,target) %>%
+  dplyr::mutate(mtls=mean(mean_ls_train),
+                mtest=mean(mean_ls_valid))%>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(ew_logi=ifelse(grepl("EW_BMC",model_name),1,0)) %>%
+  group_by(ew_logi,target) %>%
+  dplyr::mutate(group_sd1=sd(mtest),
+                cutoff=max(mtest)-group_sd1,
+                max_model=model_name[which.max(mtest)],
+                comp=substr(model_name, nchar(model_name), nchar(model_name)))%>%
+  dplyr::filter(round(mtest,2)>=round(cutoff,2)) %>%
+  dplyr::mutate(select_model=model_name[which.min(as.numeric(comp))]) %>%
+  dplyr::filter(select_model==model_name) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(-"mean_ls_train",-"mean_ls_valid",-"valids",-"valid_season",-"mtls",-"ew_logi",-"comp") %>%
+  dplyr::arrange(target) %>%
+  dplyr::distinct()
+
+cv_scores1 <- cv_scores1_all[,c(1:4,8)] 
+cv_scores2 <- cv_scores2_all[,c(1:4,8)]
+cv_scores3 <- cv_scores3_all[,c(1:4,8)] 
+
+colnames(cv_scores1) <- c("Target","Model Name","Mean train log score","Mean validation log score","rank")
+colnames(cv_scores2) <- c("Target","Model Name","Mean train log score","Mean validation log score","rank")
+colnames(cv_scores3) <- c("Target","Model Name","Mean train log score","Mean validation log score","rank")
+```
+
+```{r}
+cv_scores1t <- cv_scores1 %>%
+  dplyr::select(-c("rank", "Mean train log score")) %>%
+  pivot_wider(names_from ="Model Name", values_from="Mean validation log score")
+cv_scores2t <- cv_scores2 %>%
+  dplyr::select(-c("rank", "Mean train log score")) %>%
+  pivot_wider(names_from ="Model Name", values_from="Mean validation log score")
+cv_scores3t <- cv_scores3 %>%
+  dplyr::select(-c("rank", "Mean train log score")) %>%
+  pivot_wider(names_from ="Model Name", values_from="Mean validation log score")
+```
+
+```{r cvtabs,fig.width=4}
+# grid.arrange(distance_heatmap(cv_scores1,"2016/2017"),
+#              distance_heatmap(cv_scores2,"2017/2018"),
+#              distance_heatmap(cv_scores3,"2018/2019"),ncol=1)
+knitr::kable(cv_scores1t,digits=2)
+knitr::kable(cv_scores2t,digits=2)
+knitr::kable(cv_scores3t,digits=2)
+
+```
+
+\newpage
+
+## Mean train and test log scores
+
+```{r}
+## get data
+final_ls1 <- read.csv(paste0(path,"/ensembles/pit_ls_frame/train_test/ls_fsn_frame.csv")) 
+# %>%
+#   dplyr::mutate(model_name=ifelse(model_name=="BLP","LP","EW"))
+final_ls2  <- read.csv(paste0(path,"/ensembles/pit_ls_frame/train_test/ls_tw_frame.csv")) %>%
+  dplyr::filter(!is.na(mean_ls_test)) 
+final_ls <- rbind(final_ls1,final_ls2)
+
+## build detailed ls
+for(i in 17:19){
+  p1 <-paste0(path,"/ensembles/pit_ls_frame/train_test/",i) 
+  p2 <-paste0(path,"/ensembles/pit_ls_frame/train_test/EW_TLP/",i)
+  ls1 <- map_dfr(1:4, function(j) {
+    read.csv(paste0(p1,"/target",j,".csv"))}) %>%
+      dplyr::mutate(ls=replace(ls, ls < -10, -10))
+  ls2 <- map_dfr(1:4, function(j) {
+    read.csv(paste0(p2,"/target",j,".csv")) %>%
+      dplyr::mutate(ls=replace(ls, ls < -10, -10))
+    # %>%
+    #   dplyr::mutate(model_name=ifelse(model_name=="BLP","LP","EW"))
+    })
+  assign(paste0("locls",i), rbind(ls1,ls2))
+}
+## build location ls for test 
+for(i in 17:19){
+  seas <- ifelse(i==17,"2016/2017",ifelse(i==18,"2017/2018","2018/2019"))
+  assign(paste0("ploc",i), 
+         get(paste0("locls",i)) %>%
+           dplyr::filter(season==seas,
+                         !(model_name %in% c("EW_BMC5","EW_BMC3"))) %>%
+           dplyr::group_by(location,target,model_name) %>%
+           dplyr::mutate(loc_mean=mean(ls)) %>%
+           ungroup() %>%
+           dplyr::select(-c("bin_start_incl","bin_end_notincl","calendar_week",
+                            "cdf_vals","value","ls","Valid.Bin_start_incl")) %>%
+           distinct()
+         )
+}
+
+# table
+for(i in 1:3){
+  final_ls2 <- final_ls %>%
+    dplyr::filter(test_season==test_s[i]) %>%
+    dplyr::arrange(target) %>%
+    pivot_longer(
+      cols =c("mean_ls_train","mean_ls_test"),
+      values_to = "value") %>%
+    dplyr::mutate(test_train=ifelse(name=="mean_ls_train",
+                                    paste0("training period\n average for \n",test_season),test_season)) %>%
+    dplyr::select(-"name") %>%
+    dplyr::arrange(target,test_train,desc(value)) %>%
+    group_by(target,test_train) %>%
+    dplyr::mutate(rank=rank(-round(value,2), ties.method="min")) %>%
+    #dplyr::mutate(rank=order(-value)) %>%
+    ungroup()
+  # %>%
+    # #rowwise %>%
+    # dplyr::mutate(model_name = ifelse(model_name=="LP","FSNetwork-TW",
+    #                 ifelse(model_name=="EW","EW-LP",
+    #                        ifelse(model_name=="EW_BLP","EW-BLP",
+    #                               ifelse(model_name=="BMC2",expression("BMC"[2]),
+    #                                      ifelse(model_name=="EW_BMC2",expression("EW-BMC"[2]),
+    #                                             ifelse(model_name=="EW_BMC5",expression("EW-BMC"[5]),
+    #                                                    expression("EW-BMC"[3])))))))
+               #   )
+  
+  colnames(final_ls2) <- c("Target","Model Name","Test Season","value","test_train","rank")
+  assign(paste0("tab",i),final_ls2)
+}
+```
+
+```{r lsheatloc1}
+loc_heatmap(ploc17)
+
+pdf(paste0(path,"/figures/ls_heatloc1-1.pdf"), width = 9, height = 7)
+loc_heatmap(ploc17)
+dev.off()
+```
+
+```{r lsheatloc2}
+loc_heatmap(ploc18)
+
+pdf(paste0(path,"/figures/ls_heatloc2-1.pdf"), width = 9, height = 7)
+loc_heatmap(ploc18)
+dev.off()
+```
+
+```{r lsheatloc3}
+loc_heatmap(ploc19)
+
+pdf(paste0(path,"/figures/ls_heatloc3-1.pdf"), width = 9, height = 7)
+loc_heatmap(ploc19)
+dev.off()
+```
+
+
+<!-- # ```{r lsbox} -->
+<!-- # grid.arrange(distance_heatmap(cv_scores1,"2016/2017"), -->
+<!-- #              distance_heatmap(cv_scores2,"2017/2018"), -->
+<!-- #              distance_heatmap(cv_scores3,"2018/2019"),ncol=1) -->
+<!-- # ``` -->
+
+```{r lsheat1, fig.height=10}
+mheat1 <- mean_heat(tab1,"2016/2017")
+mheat2 <- mean_heat(tab2,"2017/2018")
+mheat3 <- mean_heat(tab3,"2018/2019")
+
+lsheat1 <- ggarrange(
+  mheat1, mheat2, mheat3, 
+  #labels = c("A", "B"),
+  common.legend = TRUE, legend = "bottom",
+  nrow=3,ncol=1
+  )
+lsheat1 
+pdf(paste0(path,"/figures/ls_comb.pdf"), width = 9, height = 8)
+print(lsheat1)
+dev.off()
+``` 
+
+<!-- ```{r lsheat2, fig.height=3} -->
+<!-- mean_heat(tab2,"2017/2018") -->
+<!-- ```  -->
+
+<!-- ```{r lsheat3, fig.height=3} -->
+<!-- mean_heat(tab3,"2018/2019") -->
+<!-- ```  -->
+
+# Mean log scores across all targets by season
+
+```{r}
+#fix
+alltar_tab <- rbind(tab1,tab2,tab3) %>%
+  dplyr::select(`Model Name`, value, test_train,`Test Season`) %>%
+  dplyr::mutate(test_train=ifelse(grepl("training period",test_train),"training period\n average","test period\n average")) %>%
+  dplyr::group_by(test_train,`Model Name`,`Test Season`) %>%
+  dplyr::mutate(mean_across=mean(value)) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(-value) %>%
+  dplyr::distinct() %>%
+  dplyr::group_by(test_train,`Test Season`) %>%
+  dplyr::mutate(rank=rank(-round(mean_across,2), ties.method="min")) %>%
+  # dplyr::mutate(rank = order(-mean_across)) %>%
+  dplyr::ungroup()
+
+# combine all
+all_tab <- rbind(tab1,tab2,tab3) %>%
+  dplyr::select(`Model Name`, value, test_train) %>%
+  dplyr::mutate(test_train=ifelse(grepl("training period",test_train),"training period\n average","test period\n average")) %>%
+  dplyr::group_by(test_train,`Model Name`) %>%
+  dplyr::mutate(mean_across=mean(value)) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(-value) %>%
+  dplyr::distinct() %>%
+  dplyr::group_by(test_train) %>%
+  dplyr::mutate(rank=rank(-round(mean_across,2), ties.method="min")) %>%
+  # dplyr::mutate(rank = order(-mean_across)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(`Test Season`="All seasons")
+com_tab <- rbind(all_tab[,c(1:2,5,3:4)],alltar_tab)
+
+# Mean log scores across all seasons by target
+all_tab_sea <- rbind(tab1,tab2,tab3) %>%
+  dplyr::select(`Model Name`, value, test_train,Target) %>%
+  dplyr::mutate(test_train=ifelse(grepl("training period",test_train),"training period\n average","test period\n average")) %>%
+  dplyr::group_by(test_train,`Model Name`,Target) %>%
+  dplyr::mutate(mean_across=mean(value)) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(-value) %>%
+  dplyr::distinct() %>%
+  dplyr::group_by(test_train,Target) %>%
+  dplyr::mutate(rank=rank(-round(mean_across,2), ties.method="min")) %>%
+  # dplyr::mutate(rank = order(-mean_across)) %>%
+  dplyr::ungroup()
+```
+
+```{r lsallyear,fig.height=6}
+bottomm <-mean_heat_all2(com_tab,"(b) Mean log scores by season")
+topm <- mean_heat_all3(all_tab_sea,"(a) Mean log scores by target")
+ggarrange(
+  topm, bottomm,
+  #labels = c("A", "B"),
+  common.legend = TRUE, legend = "bottom",
+  nrow=2,ncol=1
+  )
+``` 
+
+
+<!-- ```{r lsalltar,fig.height=3} -->
+<!-- mean_heat_all3(all_tab_sea,"Mean log scores by target") -->
+<!-- ```  -->
+
+
+# Box plot
+```{r}
+locls17 <- locls17 %>%
+  dplyr::filter(season=="2016/2017") 
+locls18 <- locls18 %>%
+  dplyr::filter(season=="2017/2018") 
+locls19 <- locls19 %>%
+  dplyr::filter(season=="2018/2019") 
+
+comdat <- rbind(locls17,locls18,locls19)
+``` 
+
+```{r box}
+mod_order <- c("EW","TLP","EW_BLP","BLP","EW_BMC2","BMC2")
+name <- c(expression("EW-LP"),expression("LP"),expression("EW-BLP"),expression("BLP"),
+          expression("EW-BMC"[2]),expression("BMC"[2]))
+my_colors <-brewer.pal(n = 3, name = "Dark2")
+ggplot(comdat,aes(factor(model_name,levels=mod_order),ls,color=season)) +
+  geom_boxplot(outlier.size=0)+
+  stat_summary(fun=mean,geom='point',shape=4,col='black',
+               aes(group = season), position=position_dodge(.8),show.legend=TRUE)+
+  facet_wrap(~target)+
+  scale_color_manual(name="Season",values = my_colors) +
+  scale_x_discrete(labels=name)+
+  scale_shape_manual(values=c("Mean"="x"))+
+  theme_bw()+
+  ylab("Log scores")+
+  xlab("Method")+
+  #guides(fill=guide_legend(title="Season"))+
+  theme(axis.text.x=element_text(size=7))
+``` 
+
+# Reliability plots
+
+```{r}
+set.seed(1234)
+some_files1 <- list.files(paste0(path,"/ensembles/pit_ls_frame/train_test/",17,"/"),
+                            full.names=TRUE, recursive = TRUE)
+some_files2 <- list.files(paste0(path,"/ensembles/pit_ls_frame/train_test/EW_TLP/",17,"/"),
+                            full.names=TRUE, recursive = TRUE)
+some_files3 <- list.files(paste0(path,"/ensembles/pit_ls_frame/train_test/",18,"/"),
+                            full.names=TRUE, recursive = TRUE)
+some_files4 <- list.files(paste0(path,"/ensembles/pit_ls_frame/train_test/EW_TLP/",18,"/"),
+                            full.names=TRUE, recursive = TRUE)
+some_files5 <- list.files(paste0(path,"/ensembles/pit_ls_frame/train_test/",19,"/"),
+                            full.names=TRUE, recursive = TRUE)
+some_files6 <- list.files(paste0(path,"/ensembles/pit_ls_frame/train_test/EW_TLP/",19,"/"),
+                            full.names=TRUE, recursive = TRUE)
+```
+
+<!-- ```{r, include=FALSE} -->
+<!-- for(j in 1:4){ -->
+<!--   for(i in 1:3){ -->
+<!--     fs <- read.csv(paste0(path,"/ensembles/pit_ls_frame/train_test/EW_LP/",16+i,"/target",j,".csv")) %>% -->
+<!--       dplyr::mutate(model_name=ifelse(model_name=="BLP","LP","EW")) -->
+<!--     assign(paste0("sea",16+i,"_tar",j), -->
+<!--            rbind(read.csv(paste0(path,"/ensembles/pit_ls_frame/train_test/",16+i,"/target",j,".csv")),fs) -->
+<!--            )  -->
+<!--   } -->
+<!-- } -->
+
+<!-- ensemble_list <- c("LP","EW","BLP","EW_BLP","BMC2","EW_BMC2") -->
+<!-- ensemble_list2 <- c("LP","EW","BLP","EW_BLP","BMC2","EW_BMC2") -->
+<!-- ensemble_list3 <- c("LP","EW","BLP","EW_BLP","BMC2","EW_BMC2") -->
+<!-- ``` -->
+
+## Test season 2016/2017
+```{r}
+cd_pplot <- function(cdtab1,cdtab2){
+  cdtab1$tt <- "Training period"
+  cdtab2$tt <- "Test period"
+  cdtab <- rbind(cdtab1,cdtab2) %>%
+    dplyr::mutate(tt=factor(tt, levels=c("Training period","Test period")))
+  if("Season" %in% colnames(cdtab)){
+    p <- ggplot(cdtab, aes(x=target,y=cd,color=Method))+
+    geom_point() +
+    facet_grid(Season~tt)+
+    scale_colour_manual(
+      # values = c(RColorBrewer::brewer.pal(11,"RdBu")[c(4,3,8,10)],
+      #            RColorBrewer::brewer.pal(11,"PuOr")[c(8,10)]),
+      values = c("#fdc086","#d95f02","#beaed4","#7570b3","#7fc97f","#1b9e77"),
+      labels = parse_format())+
+    ylab("Cramer Distance")+
+    xlab("")+
+    theme_bw()+
+    theme(legend.position = "bottom",
+          legend.text.align = 0) 
+    
+  } else {
+    p <- ggplot(cdtab, aes(x=target,y=cd,color=Method))+
+    geom_point() +
+    facet_wrap(~tt)+
+    scale_colour_manual(
+      # values = c(RColorBrewer::brewer.pal(11,"RdBu")[c(4,3,8,10)],
+      #            RColorBrewer::brewer.pal(11,"PuOr")[c(8,10)]),
+      values = c("#fdc086","#d95f02","#beaed4","#7570b3","#7fc97f","#1b9e77"),
+      labels = parse_format())+
+    ylab("Cramer Distance")+
+    xlab("")+
+    theme_bw()+
+    theme(legend.position = "bottom",
+          legend.text.align = 0) 
+  }
+
+  print(p)
+}
+```
+
+```{r reli1,fig.align="center",fig.pos='H'}
+reli1p <- reli_plot(some_files1 ,some_files2,17,test=FALSE)
+reli1pt <- reli_plot(some_files1 ,some_files2,17,test=TRUE)
+# tab1 <- reli_cd(some_files1,some_files2,17,test=FALSE,cd_type=1)
+# tab2 <- reli_cd(some_files1,some_files2,17,test=TRUE,cd_type=1)
+tab1 <- reli_cd(some_files1,some_files2,17,test=FALSE,cd_type=2) %>%
+  dplyr::mutate(Season="2016/2017")
+tab2 <- reli_cd(some_files1,some_files2,17,test=TRUE,cd_type=2) %>%
+  dplyr::mutate(Season="2016/2017")
+knitr::kable(tab1)
+knitr::kable(tab2)
+#cd_pplot(tab1,tab2)
+```
+
+\begin{itemize}
+\item 1 wk ahead: There is evidence of bias in the PIT histograms in both the training and test seasons. The BLP, which outperforms other methods, has a more uniform PIT histogram in the test season.
+\item 1 wk ahead: The training PIT histograms for BMC2, EW-BLP, and EW-BMC2 look more uniform compared to that of BLP, maybe overfitting?
+\item 2 Week Ahead: There is evidence of some bias in the PIT histograms in both the training and test seasons but less than the previous target. The BLP, which outperforms other methods, has a more uniform PIT histogram in the test season.
+\item 3 Week Ahead: There is evidence of some bias in the PIT histograms in both the training and test seasons. The BLP, which outperforms other methods, has a more uniform PIT histogram in the test season.
+\item 3 Week Ahead: There might be some overfitting going on, the train PIT histograms look a lot better than the test PIT histograms.
+\item 4 Week Ahead: There is evidence of a little bias in the PIT histograms in both the training and test seasons. 
+\item 4 Week Ahead: The BLP, EW-BLP, BMC2, and EW-BMC2 are relatively well-calibrated in the training seasons which outperforms other methods, has a more uniform PIT histogram in the test season.
+\item 4 Week Ahead: LP outperforms other methods in terms of mean test log score, but the beta methods seem to have more uniform PIT histograms.
+\end{itemize}
+
+\newpage
+
+<!-- ### 2 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea17_tar2,tars[2],seasons[1:6], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ```{r fig2,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2016/2017"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea17_tar2,tars[2],test_s[1], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+
+<!-- ### 3 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea17_tar3,tars[3],seasons[1:6], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ```{r fig3,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2016/2017"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot2(sea17_tar3,tars[3],test_s[1], ens,c(0,2.5)) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ### 4 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # ens_names <- unique(sea17_tar4$model_name) -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea17_tar4,tars[4],seasons[1:6], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+
+<!-- ```{r fig4,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2016/2017"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea17_tar4,tars[4],test_s[1], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+
+\newpage
+
+## Test season 2017/2018
+
+```{r reli2,fig.align="center",fig.pos='H'}
+reli2p <- reli_plot(some_files3 ,some_files4,18,test=FALSE)
+reli2pt <- reli_plot(some_files3 ,some_files4,18,test=TRUE)
+tab3 <- reli_cd(some_files3,some_files4,18,test=FALSE,cd_type=2)%>%
+  dplyr::mutate(Season="2017/2018")
+tab4 <- reli_cd(some_files3,some_files4,18,test=TRUE,cd_type=2)%>%
+  dplyr::mutate(Season="2017/2018")
+knitr::kable(tab3)
+knitr::kable(tab4)
+```
+
+\begin{itemize}
+\item 1 Week Ahead There is evidence of some bias in the PIT histograms in both the training and test seasons. The BLP, which outperforms other methods, has a more uniform PIT histogram in the test season, but it is not very calibrated.
+\item 2 Week Ahead: There is evidence of some bias in the PIT histograms in both the training and test seasons. Overall the PIT histograms for the beta methods do not look uniform for the test season, despite being relatively well calibrated for the training seasons
+\item 2 Week Ahead: The BLP, which outperforms other methods, does not seem to be more calibrated than the LP in the test season.
+\item 3 Week Ahead: We have a similar situation here as in the previous target of the same year, but the tail calibration is much worse.
+\item 3 Week Ahead: BMC2 is the best performing method in terms of mean log score, but again it does not seem more calibrated than LP (or worse even).
+\item 4 Week Ahead: PIT histograms for the training season look well calibrated, but very uncalibrated for the test seasons.
+\item 4 Week Ahead: LP outperforms other methods here in terms of log score, and the PIT histograms agree.
+\item 4 Week Ahead: For this season, it is possible the poor calibration is a result from training seasons being very different from the test season (bad flu season in 2017/2018), so we have a lot of overfitting. This phenomenon is more apparent for 3-4 week ahead targets.
+\end{itemize}
+
+\newpage
+
+<!-- ### 2 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea18_tar2,tars[2],seasons[1:7], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ```{r fig6,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2017/2018"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot2(sea18_tar2,tars[2],test_s[2], ens,c(0,3)) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ### 3 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea18_tar3,tars[3],seasons[1:7], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ```{r fig7,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2017/2018"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot2(sea18_tar3,tars[3],test_s[2], ens,c(0,3)) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ### 4 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # ens_names <- unique(sea18_tar4$model_name) -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list2){ -->
+<!-- #   pitplot(sea18_tar4,tars[4],seasons[1:7], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ```{r fig8,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2017/2018"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list2){ -->
+<!-- #   pitplot2(sea18_tar4,tars[4],test_s[2], ens,c(0,3)) -->
+<!-- # } -->
+<!-- ``` -->
+
+
+## Test season 2018/2019
+
+```{r reli3,fig.align="center",fig.pos='H'}
+reli3p <- reli_plot(some_files5 ,some_files6,19,test=FALSE)
+reli3pt <- reli_plot(some_files5 ,some_files6,19,test=TRUE)
+# frame <- target1 %>%
+#       dplyr::filter(season==paste0("20",as.numeric(19)-1,"/20",19)) %>%
+#       dplyr::group_by(target,location,season,bin_start_incl) %>%
+#       dplyr::mutate(rand_pit=sample(cdf_vals,1)) %>%
+#       dplyr::ungroup() %>%
+#       dplyr::select(-c("calendar_week","cdf_vals","value","ls")) %>%
+#       distinct()
+tab5 <- reli_cd(some_files5,some_files6,19,test=FALSE,cd_type=2)%>%
+  dplyr::mutate(Season="2018/2019")
+tab6 <- reli_cd(some_files5,some_files6,19,test=TRUE,cd_type=2)%>%
+  dplyr::mutate(Season="2018/2019")
+knitr::kable(tab5)
+knitr::kable(tab6)
+```
+
+```{r reli_sup_all,fig.align="center",fig.pos='H', fig.height=11,fig.width=8}
+train_reli <- ggarrange(
+  reli1p, reli2p, reli3p, 
+  #labels = c("A", "B"),
+  common.legend = TRUE, legend = "none",
+  nrow=3,ncol=1
+  )
+test_reli <- ggarrange(
+  reli1pt, reli2pt, reli3pt,
+  #labels = c("A", "B"),
+  common.legend = TRUE, legend = "none",
+  nrow=3,ncol=1
+  )
+
+train_relip <- annotate_figure(train_reli, 
+                              top = text_grob("Training period",face="bold"))
+test_relip <- annotate_figure(test_reli, 
+                              top = text_grob("Test period",face="bold"))
+
+leg <- get_legend(reli1p)
+
+reli_plot_all  <- ggarrange(
+  train_relip, test_relip,
+  #labels = c("A", "B"),
+  legend.grob = leg,
+  legend = "bottom",
+  nrow=1,ncol=2
+  )
+
+reli_plot_all
+pdf(paste0(path,"/figures/probplot_all.pdf"), width = 9, height = 13)
+reli_plot_all
+dev.off()
+```
+\begin{itemize}
+\item 1 Week Ahead: There is evidence of some bias in the PIT histograms in the training seasons, but look more calibrated for the test season.
+\item 1 Week Ahead: The BMC2, which outperforms other methods, does not seem to have a more uniform PIT histogram in the test season compared to other beta methods.
+\item 2 Week Ahead: The PIT histograms in the training and test seasons look similar for the beta methods. The BLP, which outperforms other methods, has a more uniform PIT histogram in the test season.
+\item 2 Week Ahead: There is evidence of bias.
+\item 3 Week Ahead: There is evidence of some bias in the PIT histograms in the test season, but look more calibrated for the training seasons (no surprise here).
+\item 3 Week Ahead: The BMC2, which outperforms other methods, does not seem to have a more uniform PIT histogram in the test season compared to other beta methods.
+\item 4 Week Ahead: We see a lot bias in the PIT histograms in test seasons, especially for the equally-weighted beta methods, despite the PIT histograms looking well-calibrated for the training seasons.
+\item 4 Week Ahead: The BMC2, which outperforms other methods, has a more uniform PIT histogram in the test season compared to other methods. However, these don't look well-calibrated overall.
+\end{itemize}
+
+## All seasons by target
+
+```{r reli4,fig.align="center",fig.pos='H', fig.height=5,fig.width=5}
+reliall <- reli_plot2(some_files1 ,some_files2,some_files3 ,some_files4,some_files5 ,some_files6,test=FALSE)
+reliallt <- reli_plot2(some_files1 ,some_files2,some_files3 ,some_files4,some_files5 ,some_files6,test=TRUE)
+leg2 <- get_legend(reliall)
+tab7 <- reli_cd2(some_files1 ,some_files2,some_files3 ,some_files4,some_files5 ,some_files6,test=FALSE,cd_type=2)
+tab8 <- reli_cd2(some_files1 ,some_files2,some_files3 ,some_files4,some_files5 ,some_files6,test=TRUE,cd_type=2)
+#knitr::kable(tab7)
+#knitr::kable(tab8)
+```
+
+```{r reli_main,fig.align="center",fig.pos='H', fig.height=10,fig.width=8}
+# reliallp <- annotate_figure(ggarrange(reliall,legend = "none"), 
+#                               top = text_grob("Training period",face="bold"))
+# relialltp <- annotate_figure(ggarrange(reliallt,legend = "none"), 
+#                               top = text_grob("Test period",face="bold"))
+reliallp <- reliall
+relialltp <- reliallt
+ggarrange(
+  reliallp, relialltp,
+  #labels = c("A", "B"),
+  common.legend = TRUE,
+  legend = "right",
+  nrow=2,ncol=1
+  )
+
+pdf(paste0(path,"/figures/probplot_main.pdf"), width = 7, height = 11)
+ggarrange(
+  reliallp, relialltp,
+  #labels = c("A", "B"),
+  common.legend = TRUE,
+  legend = "right",
+  nrow=2,ncol=1
+  )
+dev.off()
+
+```
+
+```{r reli5,fig.align="center",fig.pos='H', fig.height=7,fig.width=9}
+cd_pplot(tab7,tab8)
+```
+
+
+```{r reli6,fig.align="center",fig.pos='H', fig.height=11,fig.width=8}
+tab9 <- rbind(tab1,tab3,tab5)
+tab10 <-rbind(tab2,tab4,tab6)
+cd_pplot(tab9,tab10)
+```
+\newpage
+
+## Plot Flu data
+
+```{r}
+library(FluSight)
+ili_dat <- ilinet(region ="hhs", years = NULL) %>%
+  dplyr::bind_rows(ilinet(region ="national", years = NULL)) %>%
+  dplyr::mutate(Region=ifelse(region_type=="HHS Regions",paste0("HHS ",region),region)) %>%
+  dplyr::filter(week_start >= "2010-08-25" & week_start <= "2019-06-30")
+```
+
+
+<!-- ```{r fludat1,fig.align="center",fig.pos='H', fig.height=4,fig.width=6} -->
+<!-- ili_dat %>% -->
+<!--   dplyr::filter(region=="National") %>% -->
+<!-- ggplot(aes(x=week_start,y=weighted_ili))+ -->
+<!--   geom_line()+ -->
+<!--   labs(x = "", y = "Weighted ILI (%)")+ -->
+<!--   scale_x_date(date_breaks = "1 year",  -->
+<!--                labels=date_format("%Y"), -->
+<!--                # to  really limit the range on the plot -->
+<!--                expand = expansion(), -->
+<!--                limits = as.Date(c('2010-08-25','2019-06-30')))+ -->
+<!--   scale_y_continuous(limits = c(0, 8))+ -->
+<!--   theme_bw()+ -->
+<!--   theme(text = element_text(size=15), -->
+<!--         axis.text.x = element_text(size=15)) -->
+<!-- ``` -->
+
+```{r}
+library(lubridate)
+ili_dat_epi <- ili_dat %>%
+  dplyr::mutate(epiweek=as.numeric(week),
+                week=ifelse(epiweek>20,(epiweek-40)+1,ifelse(lag(epiweek)==53,epiweek+14,epiweek+13)),
+                Season=ifelse(epiweek<21, paste0(year-1,"/",year),paste0(year,"/",year+1)),
+                ltype=ifelse(Season %in% c("2016/2017","2017/2018","2018/2019"), "a","b"))  %>%
+  dplyr::filter(Region %in% c("National", paste0("HHS Region ", c(1,4,8,9))),
+                !(epiweek %in% c(21:39))) 
+# national plot
+flu1 <- ili_dat_epi %>%
+  dplyr::filter(Region =="National") %>% 
+ggplot(.,aes(x=week,y=weighted_ili,color=Season))+
+  geom_line(aes(linetype=ltype), show.legend = FALSE)+
+  labs(x = "Epiweek", y = "Weighted ILI (%)")+
+  scale_x_continuous(breaks=seq(2,32,2),
+                     labels=c(c(2,4,6,8,10,12)+40,
+                              c(14,16,18,20,22,24,26,28,30,32)-12),
+                     limits = c(1, 33),
+                     expand = expansion())+
+  scale_color_brewer(palette="Paired") +
+  scale_y_continuous(breaks=seq(0,10,1),limits = c(0, 10),labels=sprintf("%0.1f", round(seq(0,10,1), 1)))+
+ guides(linetype = "none")+
+  ggtitle("National")+
+  theme_bw()+
+  theme(text = element_text(size=10),
+        axis.text.x = element_text(size=10),
+        plot.margin=unit(c(0.2,0.1,0.1,0.4), "cm"))
+# leg3 <- get_legend(flu1)
+# flu11 <- annotate_figure(flu1 + theme(legend.position = "none"),top = text_grob("National", size = 14))
+# region plot
+flu2 <- ili_dat_epi %>%
+  dplyr::filter(Region !="National") %>% 
+ggplot(.,aes(x=week,y=weighted_ili,color=Season))+
+  geom_line(aes(linetype=ltype))+
+  facet_wrap(~Region) +
+  labs(x = "Epiweek", y = "")+
+  scale_x_continuous(breaks=seq(2,32,2),
+                     labels=c(c(2,4,6,8,10,12)+40,
+                              c(14,16,18,20,22,24,26,28,30,32)-12),
+                     limits = c(1, 33),
+                     expand = expansion())+
+  scale_color_brewer(palette="Paired") +
+  scale_y_continuous(breaks=seq(0,10,1),limits = c(0, 10),labels=sprintf("%0.1f", round(seq(0,10,1), 1)))+
+ guides(linetype = "none")+
+  theme_bw()+
+  theme(text = element_text(size=10),
+        axis.text.x = element_text(size=7),
+        plot.margin=unit(c(0.3,0.2,0.1,-0.4), "cm"))
+```
+
+```{r fludat2,fig.align="center",fig.pos='H', fig.height=5,fig.width=8.5}
+ggarrange(
+  flu1, flu2,
+  #labels = c("A", "B"),
+  common.legend = TRUE,
+  legend = "bottom",
+  nrow=1,ncol=2
+  )
+# pdf(paste0(path,"/figures/fludat.pdf"), width = 9, height = 5)
+# ggarrange(
+#   flu1, flu2,
+#   #labels = c("A", "B"),
+#   common.legend = TRUE,
+#   legend = "bottom",
+#   nrow=1,ncol=2
+#   )
+# dev.off()
+```
+<!-- # ```{r fludat2,fig.align="center",fig.pos='H', fig.height=2.5,fig.width=5} -->
+<!-- # # make hhs data plot as heatmap  -->
+<!-- # data_heat(ili_dat) -->
+<!-- # ``` -->
+
+<!-- ## Forecasts -->
+
+<!-- ```{r} -->
+<!-- library(FluSight) -->
+<!-- ili_dat <- ilinet(region ="hhs", years = NULL) %>% -->
+<!--   dplyr::bind_rows(ilinet(region ="national", years = NULL)) %>% -->
+<!--   dplyr::mutate(Region=ifelse(region_type=="HHS Regions",paste0("HHS ",region),region)) %>% -->
+<!--   dplyr::filter(week_start >= "2010-08-25" & week_start <= "2019-06-30") -->
+<!-- ``` -->
+
+
+<!-- ```{r fludat1,fig.align="center",fig.pos='H', fig.height=4,fig.width=6} -->
+<!-- ili_dat %>% -->
+<!--   dplyr::filter(region=="National") %>% -->
+<!-- ggplot(aes(x=week_start,y=weighted_ili))+ -->
+<!--   geom_line()+ -->
+<!--   labs(x = "", y = "Weighted ILI (%)")+ -->
+<!--   scale_x_date(date_breaks = "1 year",  -->
+<!--                labels=date_format("%Y"), -->
+<!--                # to  really limit the range on the plot -->
+<!--                expand = expansion(), -->
+<!--                limits = as.Date(c('2010-08-25','2019-06-30')))+ -->
+<!--   scale_y_continuous(limits = c(0, 8))+ -->
+<!--   theme_bw()+ -->
+<!--   theme(text = element_text(size=15), -->
+<!--         axis.text.x = element_text(size=15)) -->
+<!-- ``` -->
+
+## Beta transformation
+
+```{r t1}
+samples <- c(50, 70, 90)
+data("faithful")
+y <- faithful$waiting
+
+mixt.deviance <- function(theta,y) {
+  pi1    <- theta[1]
+  pi2    <- 1 - pi1
+  mu1    <- theta[2]
+  mu2    <- theta[3]
+  sigma1 <- theta[4]
+  sigma2 <- theta[5]
+  pdf <- pi1*dnorm(y,mu1,sigma1) + pi2*dnorm(y,mu2,sigma2)
+  deviance <- -2*sum(log(pdf))
+ return(deviance)
+  }
+
+r.nlm <- nlm(mixt.deviance,c(.25,52,82,10,10),y)
+theta.est <- c(r.nlm$estimate[1], 1-r.nlm$estimate[1], r.nlm$estimate[2:5])
+dmixt <- function(x,theta) {
+  pi1 <- theta[1]
+  pi2 <- theta[2]
+  mu1 <- theta[3]
+  mu2 <- theta[4]
+  sigma1 <- theta[5]
+  sigma2 <- theta[6]
+  f1 <- dnorm(x,mu1,sigma1)
+  f2 <- dnorm(x,mu2,sigma2)
+  f <- pi1*f1 + pi2*f2
+}
+
+x <- (35:100)
+pdf.mixt <- dmixt(x,theta.est)
+ggplot(data=faithful) + 
+  geom_line(data=data.frame(x,pdf.mixt), aes(x,pdf.mixt),size=0.5)+
+  ylab("PDF")+
+  xlab("X")+
+  scale_y_continuous(limits = c(0, 0.06))+
+  theme_bw()+
+  theme(aspect.ratio=1)
+```
+
+
+```{r t2}
+pmixt <- function(x,theta) {
+  pi1 <- theta[1]
+  pi2 <- theta[2]
+  mu1 <- theta[3]
+  mu2 <- theta[4]
+  sigma1 <- theta[5]
+  sigma2 <- theta[6]
+  F1 <- pnorm(x,mu1,sigma1)
+  F2 <- pnorm(x,mu2,sigma2)
+  F  <- pi1*F1 + pi2*F2
+  return(F)
+}
+cdf.mixt <- pmixt(x,theta.est)
+
+ggplot(data=data.frame(x,cdf.mixt)) + 
+ # stat_ecdf(aes(waiting), geom = "step", size=1) +
+  geom_line(aes(x,cdf.mixt),size=0.5) +
+  ylab("CDF")+
+  xlab("X")+
+  theme_bw()+
+  theme(aspect.ratio=1)
+# ggplot(df2) +
+#   geom_line(aes(x = y, y=CDF, color = Method)) +
+#   scale_color_manual(values = my_colors) +
+#   ylab("CDF") +
+#   theme_bw()+
+#   theme(axis.text.x=element_text(size=rel(1.2)),
+#         axis.text.y=element_text(size=rel(1.2)),
+#         legend.text=element_text(size=10),
+#         axis.title = element_text(size = 15),
+#         legend.title = element_text(size = 15),
+#         legend.position="bottom")
+```
+
+```{r}
+check <- pmixt(samples, theta.est)
+check
+check2 <- pbeta(check, shape1=2, shape2=3, ncp = 0, lower.tail = TRUE, log.p = FALSE)
+check2
+```
+
+```{r t3}
+cdf.beta <- pbeta(cdf.mixt, shape1=2, shape2=3, ncp = 0, lower.tail = TRUE, log.p = FALSE)
+
+ggplot(data=data.frame(cdf.mixt,cdf.beta)) + 
+ # stat_ecdf(aes(waiting), geom = "step", size=1) +
+  geom_line(aes(cdf.mixt,cdf.beta),size=0.5) +
+  ylab("CDF")+
+  xlab("LP CDF")+
+  theme_bw()+
+  theme(aspect.ratio=1)
+```
+
+```{r t4}
+ggplot(data=data.frame(x,cdf.beta)) + 
+ # stat_ecdf(aes(waiting), geom = "step", size=1) +
+  geom_line(aes(x,cdf.beta),size=0.5) +
+  ylab("CDF")+
+  xlab("X")+
+  scale_y_continuous(position = "right")+
+  theme_bw()+
+  theme(aspect.ratio=1)
+
+```
+
+```{r t5}
+db <- dbeta(cdf.mixt, shape1=2, shape2=3, ncp = 0, log = FALSE)
+dm <- db*pdf.mixt
+ggplot(data=data.frame(x,dm)) + 
+ # stat_ecdf(aes(waiting), geom = "step", size=1) +
+  geom_line(aes(x,dm),size=0.5) +
+  ylab("PDF")+
+  xlab("X")+
+  scale_y_continuous(limits = c(0, 0.06))+
+  theme_bw()+
+  theme(aspect.ratio=1)
+```
+
+<!-- # Forecast -->
+
+<!-- ```{r forecast} -->
+<!-- for(i in 17:19){ -->
+<!--   fpaths1 <- paste0(path,"/ensembles/final_ensembles/",i) -->
+<!--   fpaths2  <- paste0(path,"/ensembles/final_ensembles/EW_TLP/",i) -->
+<!--   ffiles1 <- list.files(list.files(fpaths1,full.name=TRUE),full.name=TRUE) -->
+<!--   ffiles2 <- list.files(list.files(fpaths2,full.name=TRUE),full.name=TRUE) -->
+<!--   f1 <- map_dfr(1:4, function(x){ -->
+<!--     read.csv(ffiles1[x]) -->
+<!--   }) -->
+<!--     f2 <- map_dfr(1:4, function(x){ -->
+<!--     read.csv(ffiles2[x]) -->
+<!--   }) -->
+
+<!--   assign(paste0("forecasts",i), -->
+<!--          rbind(f1,f2) -->
+<!--          ) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- median_ex <- function(forecast,sea){ -->
+<!--   med <- forecast %>% -->
+<!--     dplyr::filter(season==sea, -->
+<!--                   calendar_week==1) %>% -->
+<!--     dplyr::group_by(location, model_name,target) %>% -->
+<!--     dplyr::mutate(diff=abs(cdf_vals - 0.5), -->
+<!--                   mins = min(diff))  %>% -->
+<!--     dplyr::filter(mins==diff) %>% -->
+<!--     dplyr::ungroup() -->
+<!-- } -->
+
+<!-- median17 <- median_ex(forecasts17,"2016/2017") -->
+<!-- median18 <- median_ex(forecasts18,"2017/2018") -->
+<!-- median19 <- median_ex(forecasts19,"2018/2019") -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- interval_ex <- function(forecast,sea){ -->
+<!--   med <- forecast %>% -->
+<!--     dplyr::filter(season==sea, -->
+<!--                   calendar_week==1) %>% -->
+<!--     dplyr::group_by(location, model_name,target) %>% -->
+<!--     dplyr::mutate(diff1=abs(cdf_vals - 0.025), -->
+<!--                   diff2=abs(cdf_vals - 0.975), -->
+<!--                   mins1 = min(diff1), -->
+<!--                   mins2=min(diff2))  %>% -->
+<!--     dplyr::filter(mins1==diff1 | mins2==diff2 ) %>% -->
+<!--     dplyr::mutate(int=ifelse(bin_start_incl==max(bin_start_incl), -->
+<!--                              "up","low") -->
+<!--                   ) %>% -->
+<!--     dplyr::ungroup() -->
+<!-- } -->
+
+<!-- int17 <- interval_ex(forecasts17,"2016/2017") -->
+<!-- int18 <- interval_ex(forecasts18,"2017/2018") -->
+<!-- int19 <- interval_ex(forecasts19,"2018/2019") -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- forecasts17 %>% -->
+<!--   dplyr::filter(location=="HHS Region 1", -->
+<!--                 model_name %in% c("BLP","TLP")) %>% -->
+<!-- ggplot(., aes(bin_start_incl,value)) + -->
+<!--   geom_point(aes(color=model_name)) + -->
+<!--   facet_wrap(~target) -->
+<!-- ``` -->
+<!-- # ```{r fludat2,fig.align="center",fig.pos='H', fig.height=2.5,fig.width=4} -->
+<!-- # ili_dat %>% -->
+<!-- #   dplyr::filter(region=="National") %>% -->
+<!-- # ggplot(aes(x=week_start,y=weighted_ili))+ -->
+<!-- #   geom_line()+ -->
+<!-- #   labs(x = "", y = "Weighted ILI (%)")+ -->
+<!-- #   scale_x_date(date_breaks = "1 year",  -->
+<!-- #                labels=date_format("%Y"), -->
+<!-- #                # to  really limit the range on the plot -->
+<!-- #                expand = expansion(), -->
+<!-- #                limits = as.Date(c('2010-08-25','2019-06-30')))+ -->
+<!-- #   scale_y_continuous(limits = c(0, 8))+ -->
+<!-- #   theme_bw()+ -->
+<!-- #   theme(text = element_text(size=14), -->
+<!-- #         axis.text.x = element_text(size=14)) -->
+<!-- # ``` -->
+
+<!-- ### 2 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea19_tar2,tars[2],seasons[1:8], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ```{r fig10,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2018/2019"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea19_tar2,tars[2],test_s[3], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ### 3 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # ens_names <- unique(sea19_tar3$model_name) -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list3){ -->
+<!-- #   pitplot(sea19_tar3,tars[3],seasons[1:8], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ```{r fig11,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2018/2019"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list3){ -->
+<!-- #   pitplot(sea19_tar3,tars[3],test_s[3], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ### 4 Week Ahead -->
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Training Seasons"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot(sea19_tar4,tars[4],seasons[1:8], ens) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- ```{r fig12,fig.align="center",fig.pos='H', fig.height=5,fig.cap="PIT Histograms for Test Season 2018/2019"} -->
+<!-- # par(mfrow = c(2, 3),mai = c(0.4, 0.5, 0.5, 0.4)) -->
+<!-- # # ensembles -->
+<!-- # for (ens in ensemble_list){ -->
+<!-- #   pitplot2(sea19_tar4,tars[4],test_s[3], ens,c(0,2.5)) -->
+<!-- # } -->
+<!-- ``` -->
+
+<!-- # Estimated Parameters -->
+
+<!-- ## Test season 2016/2017 -->
+
+<!-- ### 1 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table1 <- make_sim_table(ensemble_list,1,tars,1,test_s,path) -->
+<!-- kable(table1[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table1[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table1[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table1[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table1[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- ### 2 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table2 <- make_sim_table(ensemble_list,2,tars,1,test_s,path) -->
+<!-- kable(table2[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table2[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table2[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table2[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table2[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+
+<!-- ### 3 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table3 <- make_sim_table(ensemble_list,3,tars,1,test_s,path) -->
+<!-- kable(table3[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table3[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table3[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table3[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table3[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- ### 4 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table4 <- make_sim_table(ensemble_list,4,tars,1,test_s,path) -->
+<!-- kable(table4[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table4[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table4[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table4[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table4[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- \newpage -->
+
+<!-- ## Test season 2017/2018 -->
+
+<!-- ### 1 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table5 <- make_sim_table(ensemble_list,1,tars,2,test_s,path) -->
+<!-- kable(table5[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table5[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table5[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table5[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table5[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- ### 2 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table6 <- make_sim_table(ensemble_list,2,tars,2,test_s,path) -->
+<!-- kable(table6[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table6[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table6[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table6[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table6[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- ### 3 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table7 <- make_sim_table(ensemble_list,3,tars,2,test_s,path) -->
+<!-- kable(table7[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table7[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table7[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table7[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table7[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- ### 4 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table8 <- make_sim_table(ensemble_list2,4,tars,2,test_s,path) -->
+<!-- kable(table8[,1:6], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,7:16)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,17:29)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,30:43)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,44:56)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,57:70)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,71:83)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,84:97)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,98:110)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,111:124)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,125:137)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table8[,c(1,138:151)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- \newpage -->
+
+<!-- ## Transformation Examples -->
+
+<!-- I picked week 6, US National, 2016/17 (one of the train seasons) and 2017/18 (test season). What we should note about the beta mixture PDFs is that we make a mixture of beta CDFs first, then convert to PDFs. -->
+
+<!-- ```{r} -->
+<!-- source(paste0(path,"/BLPwork_functions_app/functions_app.R")) -->
+<!-- # final dis -->
+<!-- some_files <- list.files(paste0(path,"/ensembles/final_ensembles/18/target4/"), -->
+<!--                          full.names=TRUE, recursive = TRUE) -->
+<!-- tmp <- lapply(some_files, FUN=read.csv) -->
+<!-- frame <- do.call(rbind.data.frame, tmp) -->
+<!-- frame <- frame[,c(1:6,8,7,9)] -->
+<!-- # combine -->
+<!-- final_test <- frame %>% -->
+<!--   dplyr::filter(season=="2017/2018",calendar_week==6, model_name=="BMC2", location=="US National") -->
+<!-- final_train <- frame %>% -->
+<!--   dplyr::filter(season=="2016/2017",calendar_week==6, model_name=="BMC2", location=="US National") -->
+
+<!-- # make transformations -->
+<!-- load(paste0(path,"/train_params/final_train/target4_sea18_params.rda")) -->
+<!-- pars_use <- unlist(get(paste0("target4_sea18_params"))[2]) -->
+<!-- test_f <- make_tran_pdfs("BMC2",pars_use, 2, 18, "4 wk ahead","US National",6) -->
+<!-- train_f <- make_tran_pdfs("BMC2",pars_use, 2, 17, "4 wk ahead","US National",6) -->
+<!-- bin <- seq(0,13,0.1) -->
+<!-- ``` -->
+
+
+<!-- ```{r,fig.align="center",fig.pos='H', fig.height=8} -->
+<!-- par(mfrow = c(3, 2),mai = c(0.7, 0.6, 0.3, 0.1)) -->
+<!-- ## component 1 train -->
+<!-- plot(train_f[[1]][,1]~bin,type="s",xlim=c(0,13),ylim=c(0,1),xlab="bin",ylab="CDF", -->
+<!--      main="2016/17 (train) - week 6 - US") -->
+<!-- lines(train_f[[2]][,1]~bin,lty=2) -->
+<!-- legend("bottomright", inset=.05, lty=c(1,2), -->
+<!--        c("H for Beta comp 1","Beta CDF 1")) -->
+<!-- ## component 1 test -->
+<!-- plot(test_f[[1]][,1]~bin,type="s",xlim=c(0,13),ylim=c(0,1),xlab="bin",ylab="CDF", -->
+<!--      main="2017/18 (test) - week 6 - US") -->
+<!-- lines(test_f[[2]][,1]~bin,lty=2) -->
+<!-- legend("bottomright", inset=.05, lty=c(1,2), -->
+<!--        c("H for Beta comp 1","Beta CDF 1")) -->
+
+<!-- ## component 2 train -->
+<!-- plot(train_f[[1]][,2]~bin,type="s",xlim=c(0,13),ylim=c(0,1),xlab="bin",ylab="CDF", -->
+<!--      main="2016/17 (train) - week 6 - US",col=2) -->
+<!-- lines(train_f[[2]][,2]~bin,lty=2,col=2) -->
+<!-- legend("bottomright", inset=.05, lty=c(1,2), -->
+<!--        c("H for Beta comp 2","Beta CDF 2"), col=c(2,2)) -->
+
+<!-- ## component 2 test -->
+<!-- plot(test_f[[1]][,2]~bin,type="s",xlim=c(0,13),ylim=c(0,1),xlab="bin",ylab="CDF", -->
+<!--      main="2017/18 (test) - week 6 - US",col=2) -->
+<!-- lines(test_f[[2]][,2]~bin,lty=2,col=2) -->
+<!-- legend("bottomright", inset=.05, lty=c(1,2), -->
+<!--        c("H for Beta comp 2","Beta CDF 2"), col=c(2,2)) -->
+
+<!-- ## combine train -->
+<!-- plot(train_f[[2]][,1]~bin,type="s",xlim=c(0,13),ylim=c(0,1),xlab="bin", -->
+<!--      ylab="CDF",main="2016/17 (train) - week 6 - US") -->
+<!-- #lines((train_f[[2]][,1]*train_f[[3]][1])~bin,lty=2) -->
+<!-- #  comp 2 -->
+<!-- lines(train_f[[2]][,2]~bin,type="s",col=2) -->
+<!-- #lines((train_f[[2]][,2]*train_f[[3]][2])~bin,lty=2,col=2) -->
+<!-- lines(final_train$cdf_vals~bin,type="s",col=3) -->
+<!-- legend("bottomright", inset=.05, lty=c(1,2,1,2,1), -->
+<!--        c("Beta Train CDF 1","Beta Train CDF 2","Final Train CDF"), col=1:3) -->
+<!-- # legend("bottomright", inset=.05, lty=c(1,2,1,2,1), -->
+<!-- #        c("Beta Train CDF 1","Beta Train CDF 1*weight", -->
+<!-- #          "Beta Train CDF 2","Beta Train CDF 2*weight","Final Train CDF"), col=c(1,1,2,2,3)) -->
+
+<!-- ## combine test -->
+<!-- plot(test_f[[2]][,1]~bin,type="s",xlim=c(0,13),ylim=c(0,1),xlab="bin", -->
+<!--      ylab="CDF",main="2017/18 (test) - week 6 - US") -->
+<!-- #lines((test_f[[2]][,2]*test_f[[3]][1])~bin,lty=2) -->
+<!-- #  comp 2 -->
+<!-- lines(test_f[[2]][,2]~bin,type="s",col=2) -->
+<!-- #lines((test_f[[2]][,2]*test_f[[3]][2])~bin,lty=2,col=2) -->
+<!-- lines(final_test$cdf_vals~bin,type="s",col=3) -->
+<!-- legend("bottomright", inset=.05, lty=c(1,2,1,2,1), -->
+<!--        c("Beta Test CDF 1","Beta Test CDF 2","Final Test CDF"), col=1:3) -->
+<!-- # legend("bottomright", inset=.05, lty=c(1,2,1,2,1), -->
+<!-- #        c("Beta Test CDF 1","Beta Test CDF 1*weight", -->
+<!-- #          "Beta Test CDF 2","Beta Test CDF 2*weight","Final Test CDF"), col=c(1,1,2,2,3)) -->
+<!-- # ## PDF -->
+<!-- # plot(cdf_to_pdf(train_f[[2]][,1]*train_f[[3]][1])~bin,type="s",xlim=c(0,13),ylim=c(0,0.12),xlab="bin", -->
+<!-- #      ylab="Beta component pdf",main="2016/17 (train) - week 6 - US") -->
+<!-- # lines(cdf_to_pdf(train_f[[2]][,2]*train_f[[3]][2])~bin,type="s",col=2) -->
+<!-- # lines(final_train$value~bin,type="s",col=3) -->
+<!-- # legend("topright", inset=.05, lty=c(1,1,1), -->
+<!-- #        c("Beta PDF 1*w1","Beta PDF 2*w2","pdf"), col=1:3) -->
+<!-- #  -->
+<!-- # ## PDF -->
+<!-- # plot(cdf_to_pdf(test_f[[2]][,1]*test_f[[3]][1])~bin,type="s",xlim=c(0,13),ylim=c(0,0.1),xlab="bin", -->
+<!-- #      ylab="Beta component pdf",main="2017/18 (test) - week 6 - US") -->
+<!-- # lines(cdf_to_pdf(test_f[[2]][,2]*test_f[[3]][2])~bin,type="s",col=2) -->
+<!-- # lines(final_test$value~bin,type="s",col=3) -->
+<!-- # legend("topright", inset=.05, lty=c(1,1,1), -->
+<!-- #        c("Beta PDF 1*w1","Beta PDF 2*w2","pdf"), col=1:3) -->
+
+<!-- ``` -->
+
+<!-- \newpage -->
+
+<!-- ## Test season 2018/2019 -->
+
+<!-- ### 1 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table9 <- make_sim_table(ensemble_list,1,tars,3,test_s,path) -->
+<!-- kable(table9[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table9[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table9[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table9[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table9[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- ### 2 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table10 <- make_sim_table(ensemble_list,2,tars,3,test_s,path) -->
+<!-- kable(table10[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table10[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table10[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table10[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table10[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- ### 3 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table11 <- make_sim_table(ensemble_list3,3,tars,3,test_s,path) -->
+<!-- kable(table11[,1:10], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table11[,c(1,11:23)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table11[,c(1,24:37)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table11[,c(1,38:50)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table11[,c(1,51:64)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table11[,c(1,65:77)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table11[,c(1,78:91)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+
+<!-- ### 4 Week Ahead -->
+
+<!-- ```{r} -->
+<!-- # order model -->
+<!-- table12 <- make_sim_table(ensemble_list,4,tars,3,test_s,path) -->
+<!-- kable(table12[,1:7], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table12[,c(1,8:20)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table12[,c(1,21:34)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table12[,c(1,35:47)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- kable(table12[,c(1,48:61)], escape = FALSE,linesep = "",booktabs=T) -->
+<!-- ``` -->
+

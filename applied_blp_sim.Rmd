@@ -1,13 +1,12 @@
 ---
 title: "Comparison of Ensemble Recalibration Methods in Flu Forecasting"
 author: "Nutcha Wattanachit"
-date: "12/14/2020"
+date: "03/17/2020"
 header-includes:
    - \usepackage{booktabs}
    - \usepackage[utf8]{inputenc}
    - \usepackage{tabularx}
    - \usepackage{amsmath}
-   - \usepackage{amssymb}
    - \usepackage{hyperref}
    - \usepackage{multicol}
    - \usepackage{longtable}
@@ -30,17 +29,13 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-library(pipeR)
-library(cdcfluview)
 library(Matrix)
 library(tidyverse)
-library(cowplot)
+library(caret)
 library(data.table)
 library(reshape2)
 library(gridExtra)
 library(ranger)
-library(splines)
-library(ggplot2)
 library(xtable)
 library(here)
 library(stats)
@@ -55,12 +50,12 @@ library(kableExtra)
 library(rstan)
 
 knitr::opts_chunk$set(echo = FALSE, warning(file = "./R-warnings.txt"),
-                      comment = FALSE, message=FALSE, fig.show= 'hold', fig.pos="h",
-                      table.placement='h')
+                      comment = FALSE, message=FALSE,fig.show= 'hold', fig.pos="h",
+                      table.placement='h',cache=T)
 options(kableExtra.latex.load_packages = FALSE)
 ```
 
-We compare 1) the equally-weighted ensemble, 2) the traditional linear pool (TLP), 3) the beta-transform linear pool (BLP), 4) the equally-weighted beta-transform linear pool, 5) the Bayesian finite beta mixture 6) the Bayesian finite beta mixture with equally-weighted component forecasts in the simulation studies and in the application of influenza forecasting. For both beta mixture approaches, the number of mixing beta components are $K=2,3,$ and $4$. 
+We compare 1) the equally-weighted ensemble, 2) the traditional linear pool (TLP), 3) the beta-transform linear pool (BLP), 4) the equally-weighted beta-transform linear pool, 5) the finite beta mixture 6) the finite beta mixture with equally-weighted component forecasts in the simulation studies and in the application of influenza forecasting. For both beta mixture approaches, the number of mixing beta components are $K=2,3,$ and $4$. 
 
 # Methods
 
@@ -115,7 +110,7 @@ The EW-BLP finds the transformation parameters $\alpha,\beta > 0$ that maximize 
 f_{\text{EW-BLP}}(y)=\Big(\sum_{m=1}^M w_mf_m(y)\Big)b_{\alpha,\beta}\Big(\sum_{m=1}^M \frac{1}{M} F_m(y)\Big).
 \end{align}
 
-## Bayesian finite beta mixture ($\text{BM}_k$)
+## Finite beta mixture ($\text{BM}_k$)
 
 The $\text{BM}_k$ extends the BLP method by using a finite beta mixture combination formula
 
@@ -129,7 +124,7 @@ where the vector $w_1,..., w_K$ comprises the beta mixture weights, $\alpha_1,..
 f_{\text{BM}_k}(y)=\sum_{k=1}^K w_k(\sum_{m=1}^M \omega_{km} f_m(y)\Big)b_{\alpha,\beta}\Big(\sum_{m=1}^M \omega_{km} F_m(y)\Big).
 \end{align}
 
-## Bayesian finite equally weighted beta mixture  ($\text{EW-BM}_k$)
+## Finite beta mixture with equally weighted ensemble  ($\text{EW-BM}_k$)
 
 The $\text{EW-BM}_k$ uses a finite beta mixture combination formula to combine an equally-weighted ensemble as follows
 
@@ -145,6 +140,8 @@ f_{\text{EW-BM}_k}(y)=\sum_{k=1}^K w_k(\sum_{m=1}^M \frac{1}{M} f_m(y)\Big)b_{\a
 
 # Simulation studies
 
+We investigate the out-of-sample performance of the aforementioned combination formulae in three simulation scenarios. For the mixture methods, we use 5-fold cross-validation to select the number of beta components and then implement the mixture methods with their corresponding selected number of beta components. 
+
 ## Scenario 1: Unbiased and calibrated components 
 
 The data generating process for the observation $Y$ in the regression model is 
@@ -155,11 +152,10 @@ Y = X_0+a_1X_1+a_2X_2+a_3X_3+ \epsilon, \\
 $$
 where $a_1=1,a_2=1,$ and $a_3=1.1$, and $X_0,X_1,X_2,X_3,$ and $\epsilon$ are independent, standard normal random variables. The TLP's PITs are approximately beta distributed (underdispersed inverted U-shape) in this scenario, so BLP should be able to find optimal $\alpha$ and $\beta$ to adjust the PITs. Specifically, this scenario serves to demonstrate the shortcoming of TLP and to motivate BLP. We expect BMC to do as well as BLP as it is more flexible (and thus has higher complexity), but BMC is not necessary.  
 
-```{r, include=FALSE}
-set.seed(1234)
+```{r, include=FALSE,set.seed(1234)}
 source("./applied_blp_sim.R")
 # -----------Scenario 0: Simulation setup -----------------------#
-n <- 1e5
+n <- 50000
 
 coefs <- c(a0 = 1, a1 = 1, a2 = 1, a3 = 1.1)
 vars  <- matrix(rnorm(n = n*4), nrow = n, dimnames = list(NULL, c("x0", "x1", "x2", "x3")))
@@ -174,20 +170,21 @@ for(i in 1:ncol(means0)){
   sds0[,i]    <- sqrt(1 + sum(coefs[!ind]^2))
 }
 
-forecast_names <- c("TLP", "BLP","EW", "EW-BLP",
-                    "BMC2","EW-BMC2","BMC3","EW-BMC3",
-                    "BMC4","EW-BMC4","BMC5","EW-BMC5")
-
+forecast_names <- c("TLP", "BMC1","EW", "EW_BMC1",
+                    "BMC2","EW_BMC2","BMC3","EW_BMC3",
+                    "BMC4","EW_BMC4","BMC5","EW_BMC5")
+# indices for cv
 ind_est <- c(rep(TRUE, n-(n/5)), rep(FALSE, n/5))
+cv_list <- createFolds(Y[ind_est,], k = 5, list = TRUE, returnTrain = FALSE)
 ```
 
-```{r,fig.align="center",fig.pos='H',fig.width=5, fig.height=3,message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+```{r,fig.align="center",fig.pos='H',fig.width=5, fig.height=3,fig.cap="",results='hide'}
 plot(density(Y),main="Distribution of Y", cex.main=0.8)
 ```
 
 The individual predictive densities have partial access of the above set of covariates. $f_1$ has access to only $X_0$ and $X_1$, $f_2$ has access to only $X_0$ and $X_2$, and $f_3$ has access to only $X_0$ and $X_3$. We want to combine $f_1,f_2,$ and $f_3$ to predict $Y$. In this setup, $X_0$ represent shared information, while other covariates represent information unique to each individual model. 
 
-We estimate the pooling/combination formulas on a random sample ${(f_{1i} , f_{2i} , f_{3i}, Y_i) : i = 1,..., n}$ of size $n = 80,000$ and evaluate on an independent test sample of $n=20,000$. In this scenario, $a_1 = a_2 = 1$ and $a_3 = 1.1$, so that $f_3$ is a more concentrated, sharper density forecast than $f_1$ and $f_2$ (Gneiting and Ranjan (2013)) and they are defined as follows:
+We estimate the pooling/combination formulas on a training data set ${(f_{1i} , f_{2i} , f_{3i}, Y_i) : i = 1,..., n}$ and evaluate on an independent test set. In this scenario, $a_1 = a_2 = 1$ and $a_3 = 1.1$, so that $f_3$ is a more concentrated, sharper density forecast than $f_1$ and $f_2$ (Gneiting and Ranjan (2013)) and they are defined as follows:
 
 $$
 \begin{aligned}
@@ -201,131 +198,81 @@ $$
 # make density forecasts and component PITs
 comp_forecasts <- dnorm(Y, means0, sds0)
 comp_pits <- pnorm(Y, means0, sds0)
-
 # component
 component_results_s1 <- get_component_res(comp_forecasts,comp_pits,ind_est, !ind_est,PIT=TRUE)
-
 # TLP/BLP/EW/EW-BLP -----------------------------------
 for(ens in forecast_names[1:4]){
   assign(paste0(ens,"_results_s1"), 
-         make_freq_ensemble(ens,comp_forecasts,comp_pits, c(0.3, 0.3, 0.4),ind_est, !ind_est))
+         non_mixture_wrapper(ens, comp_forecasts, comp_pits,ind_est))
 }
 
 # BMC/EW-BMC --------------------------------------------------------------------------
-for(mix_ens in forecast_names[5:12]){
-  if(grepl(2,mix_ens, fixed = TRUE)){
-    K<-2
-    init_vals <- list(mu=rnorm(2,0.5,1e-3),nu=rnorm(2,2,1e-3),w=c(0.3,0.7))
-    } else if(grepl(3,mix_ens, fixed = TRUE)){
-      K<-3
-      init_vals <- list(mu=rnorm(3,0.5,1e-3),nu=rnorm(3,2,1e-3),w=c(0.1,0.3,0.6))
-      } else if(grepl(4,mix_ens, fixed = TRUE)){
-        K<-4
-        init_vals <- list(mu=rnorm(4,0.5,1e-3),nu=rnorm(4,2,1e-3),w=c(0.1,0.3,0.4,0.2))
-      } else if(grepl(5,mix_ens, fixed = TRUE)){
-        K<-5
-        init_vals <- list(mu=rnorm(5,0.5,1e-3),nu=rnorm(5,2,1e-3),w=c(0.1,0.2,0.3,0.35,0.05))
-      } else if(grepl(1,mix_ens, fixed = TRUE)){
-        K<-1
-        init_vals <- list(mu=rnorm(1,0.5,1e-3),nu=rnorm(1,2,1e-3),w=1.0)
-        dim(init_vals$mu) <- 1
-        dim(init_vals$nu) <- 1
-        dim(init_vals$w) <- 1
-        }
-  # if(!(grepl(mix_ens,"EW",fixed = TRUE))){
-  #   init_vals[["omega_k"]] <- t(replicate(K, TLP_results_s1$params))
-  # }
-    if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC1",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(replicate(K, TLP_results_s1$params))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC2",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(replicate(K, TLP_results_s1$params))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC3",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC2_results_s1$params[5],
-                                         BMC2_results_s1$params[7],
-                                         BMC2_results_s1$params[9],
-                                         BMC2_results_s1$params[6],
-                                         BMC2_results_s1$params[8],
-                                         BMC2_results_s1$params[10],
-                                         TLP_results_s1$params),
-                                       nrow=ncol(comp_forecasts),ncol=3))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC4",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC3_results_s1$params[7],
-                                         BMC3_results_s1$params[10],
-                                         BMC3_results_s1$params[13],
-                                         BMC3_results_s1$params[8],
-                                         BMC3_results_s1$params[11],
-                                         BMC3_results_s1$params[14],
-                                         BMC3_results_s1$params[9],
-                                         BMC3_results_s1$params[12],
-                                         BMC3_results_s1$params[15],
-                                         TLP_results_s1$params),
-                                       nrow=ncol(comp_forecasts),ncol=4))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC5",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC4_results_s1$params[9],
-                                         BMC4_results_s1$params[13],
-                                         BMC4_results_s1$params[17],
-                                         BMC4_results_s1$params[10],
-                                         BMC4_results_s1$params[14],
-                                         BMC4_results_s1$params[18],
-                                         BMC4_results_s1$params[11],
-                                         BMC4_results_s1$params[15],
-                                         BMC4_results_s1$params[19],
-                                         BMC4_results_s1$params[12],
-                                         BMC4_results_s1$params[16],
-                                         BMC4_results_s1$params[20],
-                                         TLP_results_s1$params),
-                                       nrow=ncol(comp_forecasts),ncol=5))
-  }
-  hyperpars <- list(rep(1.0,K),rep(1.0,ncol(comp_forecasts)),rep(1/ncol(comp_forecasts),ncol(comp_forecasts)))
-  names(hyperpars) <- c("alpha_w","alpha_omega","omega_ew")
+# do 5-cv
+cv_s1 <- cv_wrapper(forecast_names[5:12],cv_list,comp_forecasts,comp_pits)
+# run selected mixture
+for(mix_ens in cv_s1$select){
   assign(paste0(mix_ens,"_results_s1"),
-         make_mix_ensemble(mix_ens,K,comp_forecasts,comp_pits, init_vals,hyperpars,ind_est, !ind_est))
-  }
+         mixture_wrapper(mix_ens, comp_forecasts, comp_pits,ind_est))
+}
 ```
 
 
 ```{r, include=FALSE}
 # Evaluation ------------------------------------------------------------------
-table0 <-make_table(forecast_names[c(1:4)],"s1",comp_forecasts)
-table01 <-make_table_bmc(forecast_names[5:12],"s1")
-mls0 <- make_ls(forecast_names[1:12],"s1")
+# make a mean ls tables
+cv_short <- cv_s1$cv_info %>%
+  dplyr::select("method","mean_train_ls","mean_valid_ls") %>%
+  distinct()
+mls0 <- make_ls(c(forecast_names[1:4],cv_s1$select),"s1")
+# make param table
+table0 <- make_table(c(forecast_names[1:4],cv_s1$select),1)
+# table01 <- table0 %>%
+#   dplyr::filter(Method %in% gsub("_", "-", c(cv_s1$select)))
 ```
 
-```{r, fig.align="center",message=FALSE,warning=FALSE,fig.cap=""}
+```{r, fig.align="center",fig.cap=""}
+# make a table for CV
+knitr::kable(cv_short, caption="Cross validation log scores for beta mixture methods") %>%
+  kable_styling(font_size = 8, latex_options = "HOLD_position")
 # Overview over estimated parameters
-knitr::kable(list(table0,table01[,1:5]), "latex", booktabs = T, 
-             caption = "Model and Beta Mixing Weight Parameters",escape=FALSE) %>%
+knitr::kable(table0[,c(1:6)], "latex", booktabs = T, caption = "Weight Parameters",escape=FALSE) %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(table01[,6:15], "latex", booktabs = T,caption = "Mixture Parameters",escape=FALSE) %>%
+
+knitr::kable(table0[,c(1,7:16)], 
+             "latex", booktabs = T,caption = "Beta mixture parameters",escape=FALSE,row.names = NA)  %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(table01[,16:30], "latex", booktabs = T,caption = "Mixture Parameters",escape=FALSE) %>%
+
+knitr::kable(table0[,c(1,17:ncol(table0))], 
+             "latex", booktabs = T,caption = "Component weight parameters -",escape=FALSE,row.names = NA) %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(list(mls0[1:4,],mls0[5:12,]), "latex", booktabs = T,caption = "Log Score",escape=FALSE) %>%
+
+knitr::kable(list(t(mls0)), "latex", booktabs = T,caption = "Log score",escape=FALSE) %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
 ```
 
-```{r,fig.align="center",fig.width=7, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
-# PIT Histogramme
-plot_PITs(comp_pits,forecast_names[1:12],"s1",train=TRUE)
-```
-
-\clearpage
-
-```{r,fig.align="center",fig.width=7, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
-# PIT Histogramme
-plot_PITs(comp_pits,forecast_names[1:12],"s1",train=FALSE)
+```{r,fig.align="center",fig.width=8, fig.height=11,fig.cap="Train PITs"}
+# PIT Histogram
+plot_PITs(comp_pits,c(forecast_names[1:4],cv_s1$select),"s1",train=TRUE)
 ```
 
 \clearpage
 
-<!-- # ```{r,fig.align="center",fig.width=7, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""} -->
-<!-- # # PDF -->
-<!-- # plot_PDFs(Y,comp_forecasts,forecast_names[1:10],"s1") -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # \clearpage -->
+```{r,fig.align="center",fig.width=8, fig.height=11,fig.cap="Test PITs"}
+# PIT Histogram
+plot_PITs(comp_pits,c(forecast_names[1:4],cv_s1$select),"s1",train=FALSE)
+```
+
+<!-- \clearpage -->
+
+<!-- ```{r,fig.align="center",fig.width=8, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""} -->
+<!-- # PDF -->
+<!-- plot_PDFs(Y,comp_forecasts,c(forecast_names[1:4],cv_s1$select),"s1",c(0,1.2)) -->
+<!-- ``` -->
+
+\clearpage
 
 ## Scenario 2: Multimodal DGP (Normal mixture) and close-$\mathcal{M}$
+
 The data generating process for the observation $y_t$ is 
 
 $$
@@ -342,7 +289,7 @@ sigma <- rep(0.25, 3)
 Y <- rnormmix(n, p, mu, sigma)
 ```
 
-```{r,fig.align="center",fig.pos='H',fig.width=5, fig.height=3,message=FALSE,warning=FALSE,fig.cap="",results='hide'}
+```{r,fig.align="center",fig.pos='H',fig.width=5, fig.height=3,fig.cap="",results='hide'}
 plot(density(Y),main="Distribution of Y", cex.main=0.8)
 ```
 
@@ -367,246 +314,376 @@ component_results_s2 <- get_component_res(comp_forecasts2,comp_pits2,ind_est, !i
 # TLP/BLP/EW/EW-BLP -----------------------------------
 for(ens in forecast_names[1:4]){
   assign(paste0(ens,"_results_s2"), 
-         make_freq_ensemble(ens,comp_forecasts2,comp_pits2, c(0.3, 0.3, 0.4),ind_est, !ind_est))
+         non_mixture_wrapper(ens, comp_forecasts2, comp_pits2,ind_est))
 }
 
 # BMC/EW-BMC --------------------------------------------------------------------------
-for(mix_ens in forecast_names[5:12]){
-  if(grepl(2,mix_ens, fixed = TRUE)){
-    K<-2
-    init_vals <- list(mu=rnorm(2,0.5,1e-3),nu=rnorm(2,2,1e-3),w=c(0.3,0.7))
-    } else if(grepl(3,mix_ens, fixed = TRUE)){
-      K<-3
-      init_vals <- list(mu=rnorm(3,0.5,1e-3),nu=rnorm(3,2,1e-3),w=c(0.1,0.3,0.6))
-      } else if(grepl(4,mix_ens, fixed = TRUE)){
-        K<-4
-        init_vals <- list(mu=rnorm(4,0.5,1e-3),nu=rnorm(4,2,1e-3),w=c(0.1,0.3,0.4,0.2))
-      } else if(grepl(5,mix_ens, fixed = TRUE)){
-        K<-5
-        init_vals <- list(mu=rnorm(5,0.5,1e-3),nu=rnorm(5,2,1e-3),w=c(0.1,0.2,0.3,0.35,0.05))
-      } else if(grepl(1,mix_ens, fixed = TRUE)){
-        K<-1
-        init_vals <- list(mu=rnorm(1,0.5,1e-3),nu=rnorm(1,2,1e-3),w=1.0)
-        dim(init_vals$mu) <- 1
-        dim(init_vals$nu) <- 1
-        dim(init_vals$w) <- 1
-        }
-  # if(!(grepl(mix_ens,"EW",fixed = TRUE))){
-  #   init_vals[["omega_k"]] <- t(replicate(K, TLP_results_s2$params))
-  # }
-    if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC1",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(replicate(K, TLP_results_s2$params))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC2",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(replicate(K, TLP_results_s2$params))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC3",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC2_results_s2$params[5],
-                                         BMC2_results_s2$params[7],
-                                         BMC2_results_s2$params[9],
-                                         BMC2_results_s2$params[6],
-                                         BMC2_results_s2$params[8],
-                                         BMC2_results_s2$params[10],
-                                         TLP_results_s2$params),
-                                       nrow=ncol(comp_forecasts2),ncol=3))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC4",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC3_results_s2$params[7],
-                                         BMC3_results_s2$params[10],
-                                         BMC3_results_s2$params[13],
-                                         BMC3_results_s2$params[8],
-                                         BMC3_results_s2$params[11],
-                                         BMC3_results_s2$params[14],
-                                         BMC3_results_s2$params[9],
-                                         BMC3_results_s2$params[12],
-                                         BMC3_results_s2$params[15],
-                                         TLP_results_s2$params),
-                                       nrow=ncol(comp_forecasts2),ncol=4))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC5",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC4_results_s2$params[9],
-                                         BMC4_results_s2$params[13],
-                                         BMC4_results_s2$params[17],
-                                         BMC4_results_s2$params[10],
-                                         BMC4_results_s2$params[14],
-                                         BMC4_results_s2$params[18],
-                                         BMC4_results_s2$params[11],
-                                         BMC4_results_s2$params[15],
-                                         BMC4_results_s2$params[19],
-                                         BMC4_results_s2$params[12],
-                                         BMC4_results_s2$params[16],
-                                         BMC4_results_s2$params[20],
-                                         TLP_results_s2$params),
-                                       nrow=ncol(comp_forecasts2),ncol=5))
-  }
-  hyperpars <- list(rep(1.0,K),rep(1.0,ncol(comp_forecasts2)),rep(1/ncol(comp_forecasts2),ncol(comp_forecasts2)))
-  names(hyperpars) <- c("alpha_w","alpha_omega","omega_ew")
+# do 5-cv
+cv_s2 <- cv_wrapper(forecast_names[5:12],cv_list,comp_forecasts2,comp_pits2)
+# run selected mixture
+for(mix_ens in cv_s2$select){
   assign(paste0(mix_ens,"_results_s2"),
-         make_mix_ensemble(mix_ens,K,comp_forecasts2,comp_pits2, init_vals,hyperpars,ind_est, !ind_est))
-  }
+         mixture_wrapper(mix_ens, comp_forecasts2, 
+                         comp_pits2,ind_est))
+}
 ```
+
+```{r, include=FALSE, cache=TRUE}
+# Evaluation ------------------------------------------------------------------
+cv_short2 <- cv_s2$cv_info %>%
+  dplyr::select("method","mean_train_ls","mean_valid_ls") %>%
+  distinct()
+mls2 <- make_ls(c(forecast_names[1:4],cv_s2$select),"s2")
+# make param table
+table2 <- make_table(c(forecast_names[1:4],cv_s2$select),2)
+# table21 <- table2 %>%
+#   dplyr::filter(Method %in% gsub("_", "-", c(cv_s2$select)))
+```
+
+```{r, fig.align="center",fig.cap=""}
+# Overview over estimated parameters
+knitr::kable(cv_short2, caption="Cross validation log scores for beta mixture methods")%>%
+  kable_styling(font_size = 8, latex_options = "HOLD_position")
+# Overview over estimated parameters
+knitr::kable(table2[,c(1:6)], "latex", booktabs = T, caption = "Weight Parameters",escape=FALSE) %>%
+  kable_styling(font_size = 8, latex_options = "HOLD_position")
+knitr::kable(table2[,c(1,7:16)], 
+             "latex", booktabs = T,caption = "Beta mixture parameters",escape=FALSE,row.names = NA)  %>%
+  kable_styling(font_size = 8, latex_options = "HOLD_position")
+
+knitr::kable(table2[,c(1,17:ncol(table2))], 
+             "latex", booktabs = T,caption = "Component weight parameters -",escape=FALSE,row.names = NA) %>%
+  kable_styling(font_size = 8, latex_options = "HOLD_position")
+
+knitr::kable(list(t(mls2)), "latex", booktabs = T,caption = "Log score",escape=FALSE) %>%
+  kable_styling(font_size = 8, latex_options = "HOLD_position")
+```
+
+\clearpage
+
+```{r,fig.align="center",fig.width=8, fig.height=11,message=FALSE,warning=FALSE,fig.cap="Train PITs"}
+# PIT Histogramme
+plot_PITs(comp_pits2,c(forecast_names[1:4],cv_s2$select),"s2",train=TRUE)
+```
+
+\clearpage
+
+```{r,fig.align="center",fig.width=8, fig.height=11,message=FALSE,warning=FALSE,fig.cap="Test PITs"}
+# PIT Histogramme
+plot_PITs(comp_pits2,c(forecast_names[1:4],cv_s2$select),"s2",train=FALSE)
+```
+
+\clearpage
+
+```{r,fig.align="center",fig.width=8, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
+# PDF
+plot_PDFs(Y,comp_forecasts2,c(forecast_names[1:4],cv_s2$select),"s2",c(0,1.8))
+```
+
+\clearpage
+
+```{r,,fig.align="center",fig.width=8, fig.height=11,message=FALSE,warning=FALSE,fig.cap="Ensemble details"}
+# PDF
+plot_details(Y,table2)
+```
+\clearpage
+
+```{r,fig.align="center",fig.width=8, fig.height=11,message=FALSE,warning=FALSE,fig.cap="Ensemble details"}
+# PDF
+plot_details2 <- function(Y,table_row){
+  ord_y <- Y[!ind_est][order(Y[!ind_est])]
+  pdf <- comp_forecasts2[!ind_est,][order(Y[!ind_est]),]
+  ## bmc3
+  ab1 <- sapply(1:2, function(x) table_row[5,6+x])
+  ab2 <- sapply(3:4, function(x) table_row[5,6+x])
+  # ab3 <- sapply(5:6, function(x) table_row[5,5+x])
+  omegas1 <- sapply(1:3, function(x) table_row[6,16+x])
+  omegas2 <- sapply(4:6, function(x) table_row[6,16+x])
+  # omegas3 <- sapply(5:6, function(x) table_row[5,13+x])
+  inside_ens1 <- as.vector(pdf %*% omegas1)
+  inside_ens2 <- as.vector(pdf %*% omegas2)
+  # inside_ens3 <- pdf %*% omegas3
+  beta_ens1 <- dbeta(pdf %*% omegas1,shape1=ab1[1],shape2=ab1[2])
+  beta_ens2 <- dbeta(pdf %*% omegas2,shape1=ab2[1],shape2=ab2[2])
+  # beta_ens3 <- dbeta(pdf %*% omegas3,shape1=ab3[1],shape2=ab3[2])
+  # ew-bmc4
+  ab11 <- sapply(1:2, function(x) table_row[6,6+x])
+  ab21 <- sapply(3:4, function(x) table_row[6,6+x])
+  ab31 <- sapply(5:6, function(x) table_row[6,6+x])
+  ab41 <- sapply(7:8, function(x) table_row[6,6+x])
+  ab51 <- sapply(9:10, function(x) table_row[6,6+x])
+  inside_ens11 <- pdf %*% rep(1/3,3)
+  beta_ens11 <- dbeta(inside_ens11,shape1=ab11[1],shape2=ab11[2])
+  beta_ens21 <- dbeta(inside_ens11,shape1=ab21[1],shape2=ab21[2])
+  beta_ens31 <- dbeta(inside_ens11,shape1=ab31[1],shape2=ab31[2])
+  beta_ens41 <- dbeta(inside_ens11,shape1=ab41[1],shape2=ab41[2])
+  beta_ens51 <- dbeta(inside_ens11,shape1=ab51[1],shape2=ab51[2])
+  # plot
+  par(mfrow = c(5, 2))
+  # bmc3
+  plot(ord_y,inside_ens1, type="l",
+       main = "BMC2-Ensemble inside beta transformation",xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  plot(ord_y,inside_ens2, type="l",
+       main = "BMC2-Ensemble inside beta transformation",xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  # plot(ord_y,inside_ens3[,1], type="l",
+  #      main = "BMC3-Ensemble inside beta transformation",xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  plot(ord_y,beta_ens1, type="l",
+       main = paste0("BMC2-Beta-transformed ensemble"),xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  plot(ord_y,beta_ens2, type="l",
+       main = paste0("BMC2-Beta-transformed ensemble"),xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  # plot(ord_y,beta_ens3, type="l",
+  #      main = paste0("BMC3-Beta-transformed ensemble"),xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  #ew-bmc4
+  plot(ord_y,inside_ens11[,1], type="l",
+       main = "EW_BMC5-Ensemble inside beta transformation",xlab="",ylab="",cex.main=0.8, ylim=c(0,1))
+  plot(ord_y,beta_ens11 , type="l",
+       main = paste0("EW_BMC5-Beta-transformed ensemble"),xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  plot(ord_y,beta_ens21 , type="l",
+       main = paste0("EW_BMC5-Beta-transformed ensemble"),xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  plot(ord_y,beta_ens31 , type="l",
+       main = paste0("EW_BMC5-Beta-transformed ensemble"),xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  plot(ord_y,beta_ens41 , type="l",
+       main = paste0("EW_BMC5-Beta-transformed ensemble"),xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+  plot(ord_y,beta_ens51 , type="l",
+       main = paste0("EW_BMC5-Beta-transformed ensemble"),xlab="",ylab="",cex.main=0.8, ylim=c(0,1.5))
+}
+
+plot_details2(Y,table2)
+```
+\clearpage
+
+### Scenario 2.1: Multimodal DGP (Normal mixture) with empirical distributions
+
+Using the same data generating process as the continuous distribution version, but with $t=2000$ so it computes faster. Since we calculate the binned probability exactly from normal distributions, binned probabilities (empirical pdfs) are exactly the same for all $t$ in each component model.
+
+
+```{r, include=FALSE}
+# read in saved data 
+load("./emp_params/dat.RData")
+source("./applied_blp_sim_ver2.R")
+# -----------Scenario 0: Simulation setup -----------------------#
+n2 <- 2000
+ind_est2 <- c(rep(TRUE, n2-(n2/5)), rep(FALSE, n2/5))
+
+# data simulation
+p <- c(0.2,0.2,0.6)
+mu <- c(-2,0,2)
+sigma <- rep(0.25, 3)
+Y2 <- data.frame(cbind(index=1:n2,Y=rnormmix(n2, p, mu, sigma)))
+# build component model
+## set bins
+bin_start <- c(-Inf,seq(-3,3,0.25^2))
+bin_end <- c(dplyr::lead(bin_start)[-length(bin_start)],Inf)
+index <- c()
+for(i in 1:n2){
+  index <- c(index,rep(i,length(bin_start)))
+}
+temp <- data.frame(cbind(index,rep(bin_start,n2),rep(bin_end,n2)))
+names(temp)[2:3] <- c("bin_start","bin_end")
+rm(bin_start,bin_end,index)
+#  fill in bin probs
+comp_names <- c("binned_forecast1","binned_forecast2","binned_forecast3")
+comp_binned_forecasts <- data.frame()
+for(j in 1:length(comp_names)){
+   frame <- temp %>%
+     dplyr::group_by(index) %>%
+     dplyr::mutate(binned_probs=pnorm(bin_end,mu[j],sigma) - pnorm(bin_start,mu[j],sigma),
+                   model=comp_names[j]) %>%
+     ungroup()
+   rbind(comp_binned_forecasts,frame) -> comp_binned_forecasts
+ }
+rm(temp,frame)
+
+ind_est2 <- sample(1:n2,n2-(n2/5))
+cv_list2 <- createFolds(Y2[ind_est2,2], k = 5, list = TRUE, returnTrain = FALSE)
+comp_binned_pits <- comp_binned_forecasts %>%
+    dplyr::group_by(model,index) %>%
+    dplyr::mutate(cdf_val=cumsum(binned_probs)) %>%
+    ungroup()%>%
+    dplyr::left_join(Y2, by="index") %>%
+    dplyr::group_by(model,index) %>%
+    dplyr::filter((Y>=bin_start) & (Y< bin_end)) %>%
+    ungroup() %>%
+    dplyr::select("model","cdf_val","index") %>%
+    tidyr::pivot_wider(id_cols=index,
+                       names_from=model,
+                       values_from = cdf_val) 
+```
+
+<!-- # ```{r, include=FALSE} -->
+<!-- # M <- length(unique(comp_binned_forecasts$model)) -->
+<!-- # # # get ensemble params -->
+<!-- # # # TLP/BLP/EW/EW-BLP ----------------------------------- -->
+<!-- # # EW_params <- rep(1/M,M) -->
+<!-- # # TLP_params <- make_ensemble_emp("TLP", K=1, M=M, Y=Y2, ind_est2, comp_binned_forecasts) -->
+<!-- # # BLP_params <- make_ensemble_emp("BLP", K=1,M=M,Y=Y2, ind_est2, comp_binned_forecasts) -->
+<!-- # # EW_BLP_params <-make_ensemble_emp("EW-BLP", K=1,M=M, Y=Y2,ind_est2, comp_binned_forecasts) -->
+<!-- # #  -->
+<!-- # # # mixture -->
+<!-- # # for(i in 2:5){ -->
+<!-- # #   assign(paste0("BM",i,"_params"), -->
+<!-- # #          lapply(1:5, function(x) make_ensemble_emp("BLP", K=i,M=M, -->
+<!-- # #                            train_indices=ind_est2[-c(cv_list2[[x]])], Y2, comp_binned_forecasts))) -->
+<!-- # #   assign(paste0("EW_BM",i,"_params"), -->
+<!-- # #          lapply(1:5, function(x) make_ensemble_emp("EW-BLP", K=i,M=M, -->
+<!-- # #                            train_indices=ind_est2[-c(cv_list2[[x]])], Y2, comp_binned_forecasts))) -->
+<!-- # # } -->
+<!-- # #  -->
+<!-- # #  -->
+<!-- # # # make pdfs and get scores -->
+<!-- # # # normal -->
+<!-- # # for(ens in c(forecast_names[c(1,3)],"BLP","EW_BLP")){ -->
+<!-- # #   pdf <- make_pdfs(ens, get(paste0(ens,"_params")), 1,comp_binned_forecasts,M=3) -->
+<!-- # #   assign(paste0(ens,"_results_binned"),ls_pit_calc(pdf, Y2, ind_est2)) -->
+<!-- # # }   -->
+<!-- # # # mixture (get cv scores) -->
+<!-- # # cv2_binned <- cv_frame(forecast_names[5:12],comp_binned_forecasts, -->
+<!-- # #                        ind_est2,cv_list2,M=3,Y=Y2) -->
+<!-- # #  -->
+<!-- # # for(mix_ens in cv2_binned$select){ -->
+<!-- # #   if(grepl("EW_",mix_ens,fixed=TRUE)){ -->
+<!-- # #     cname <- "EW-BLP" -->
+<!-- # #   } -->
+<!-- # #   else { -->
+<!-- # #     cname <- "BLP" -->
+<!-- # #   } -->
+<!-- # #   num_k <- as.numeric(substr(mix_ens, nchar(mix_ens), nchar(mix_ens))) -->
+<!-- # #   assign(paste0(mix_ens,"_params_test"), -->
+<!-- # #          make_ensemble_emp(cname, K=num_k,M=M,train_indices=ind_est2, Y2, comp_binned_forecasts)) -->
+<!-- # #   pdf <- make_pdfs(mix_ens, get(paste0(mix_ens,"_params")),num_k ,comp_binned_forecasts,M=3) -->
+<!-- # #   assign(paste0(mix_ens,"_results_binned"),ls_pit_calc(pdf, Y2, ind_est2)) -->
+<!-- # # } -->
+<!-- #  -->
+<!-- # ``` -->
+
+
 
 ```{r, include=FALSE}
 # Evaluation ------------------------------------------------------------------
-table2 <-make_table(forecast_names[c(1:4)],"s2",comp_forecasts2)
-table21 <-make_table_bmc(forecast_names[5:12],"s2")
-mls2 <- make_ls(forecast_names[1:12],"s2")
+mls2.1 <- make_ls_bin(c(forecast_names[1:4],cv2_binned$select))
+# make param table
+table2.1 <- make_table_bin(c(forecast_names[1:4],cv2_binned$select),M=3)
 ```
+
 
 ```{r, fig.align="center",message=FALSE,warning=FALSE,fig.cap=""}
+knitr::kable(cv2_binned, caption="Cross validation log scores for beta mixture methods")%>%
+  kable_styling(font_size = 8, latex_options = "HOLD_position")
 # Overview over estimated parameters
-knitr::kable(list(table2,table21[,1:5]), "latex", booktabs = T, 
-             caption = "Model and Beta Mixing Weight Parameters",escape=FALSE) %>%
+knitr::kable(table2.1[,c(1:5)], "latex", booktabs = T, caption = "Weight Parameters",escape=FALSE) %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(table21[,6:15], "latex", booktabs = T,caption = "Mixture Parameters",escape=FALSE) %>%
+knitr::kable(table2.1[,c(1,6:13)], 
+             "latex", booktabs = T,caption = "Beta mixture parameters",escape=FALSE,row.names = NA)  %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(table21[,16:30], "latex", booktabs = T,caption = "Mixture Parameters",escape=FALSE) %>%
+
+knitr::kable(table2.1[,c(1,14:ncol(table2))], 
+             "latex", booktabs = T,caption = "Component weight parameters -",escape=FALSE,row.names = NA) %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(list(mls2[1:4,],mls2[5:12,]), "latex", booktabs = T,caption = "Log Score",escape=FALSE) %>%
+
+knitr::kable(list(t(mls2.1)), "latex", booktabs = T,caption = "Log score",escape=FALSE) %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
 ```
 
-\clearpage
-
-```{r,fig.align="center",fig.width=7, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
+```{r,fig.align="center",fig.width=6, fig.height=11,message=FALSE,warning=FALSE,fig.cap="Train PITs"}
 # PIT Histogramme
-plot_PITs(comp_pits2,forecast_names[1:12],"s2",train=TRUE)
+plot_PITs_bin(comp_binned_pits,c(forecast_names[1:4],cv2_binned$select),ind_est2,train=TRUE)
 ```
 
 \clearpage
 
-```{r,fig.align="center",fig.width=7, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
+```{r,fig.align="center",fig.width=6, fig.height=11,message=FALSE,warning=FALSE,fig.cap="Test PITs"}
 # PIT Histogramme
-plot_PITs(comp_pits2,forecast_names[1:12],"s2",train=FALSE)
+plot_PITs_bin(comp_binned_pits,c(forecast_names[1:4],cv2_binned$select),ind_est2,train=FALSE)
 ```
-
 \clearpage
 
-```{r,fig.align="center",fig.width=7, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
-# PDF
-plot_PDFs(Y,comp_forecasts2,forecast_names[1:12],"s2",c(0,1.8))
-```
+<!-- end the empirical dis for scenario 2  here -->
 
-\clearpage
-
-## Scenario 3: Multimodal DGP (Normal mixture) and open-$\mathcal{M}$
+## Scenario 3: Misspecified Normal mixture
 
 The data generating process for the observations in this scenario is the same as in Scenario 2. There are two component models defined as follows
 
 $$
 \begin{aligned}
-f_{1}&\overset{i.i.d.}{\sim}\text{N}(2,1)\\
-f_{2}&\overset{i.i.d.}{\sim}\text{N}(-1,1).\\
+f_{1}&\overset{i.i.d.}{\sim}\text{N}(1.5,1)\\
+f_{2}&\overset{i.i.d.}{\sim}\text{N}(0.5,1).\\
+f_{3}&\overset{i.i.d.}{\sim}\text{N}(-2,1).\\
 \end{aligned}
 $$
 
-The component models are not part of the data generating process. In this scenario the TLP's PITs are not approximately beta distributed, so we expect BLP to not be able to find optimal $\alpha$ and $\beta$ to calibrate the PITs. Specifically, this scenario serves to motivate BMC and show that BMC is highly flexible and can calibrate the PITs when BLP cannot. We also expect BMC with higher K to be more flexible than BMC with lower K.  
+The component models are not part of the data generating process. In this scenario the TLP's PITs are not approximately beta distributed, so we expect BLP to not be able to find optimal $\alpha$ and $\beta$ to calibrate the PITs. Specifically, this scenario serves to motivate BMC and show that BMC is highly flexible and can calibrate the PITs when BLP cannot. We also expect BMC with higher K to be more flexible than BMC with lower K.
 
 ```{r, include=FALSE}
 # make density forecasts and component PITs
-comp_forecasts3 <- cbind(dnorm(Y, 2, 1),dnorm(Y, -1, 1))
-comp_pits3 <- cbind(pnorm(Y, 2, 1),pnorm(Y, -1, 1))
+comp_forecasts3 <- cbind(dnorm(Y, 1.5, 1),dnorm(Y, 0.5, 1),dnorm(Y, -2, 1))
+comp_pits3 <- cbind(pnorm(Y, 1.5, 1),pnorm(Y, 0.5, 1),pnorm(Y, -2, 1))
 
 # TLP/BLP/EW/EW-BLP -----------------------------------
 for(ens in forecast_names[1:4]){
-  assign(paste0(ens,"_results_s3"), 
-         make_freq_ensemble(ens,comp_forecasts3,comp_pits3, c(0.4, 0.6),ind_est, !ind_est))
+  assign(paste0(ens,"_results_s3"),
+         non_mixture_wrapper(ens, comp_forecasts3, comp_pits3,ind_est))
 }
 
 # BMC/EW-BMC --------------------------------------------------------------------------
-for(mix_ens in forecast_names[5:12]){
-  if(grepl(2,mix_ens, fixed = TRUE)){
-    K<-2
-    init_vals <- list(mu=rnorm(2,0.5,1e-3),nu=rnorm(2,2,1e-3),w=c(0.3,0.7))
-    } else if(grepl(3,mix_ens, fixed = TRUE)){
-      K<-3
-      init_vals <- list(mu=rnorm(3,0.5,1e-3),nu=rnorm(3,2,1e-3),w=c(0.1,0.3,0.6))
-      } else if(grepl(4,mix_ens, fixed = TRUE)){
-        K<-4
-        init_vals <- list(mu=rnorm(4,0.5,1e-3),nu=rnorm(4,2,1e-3),w=c(0.1,0.3,0.4,0.2))
-      } else if(grepl(5,mix_ens, fixed = TRUE)){
-        K<-5
-        init_vals <- list(mu=rnorm(5,0.5,1e-3),nu=rnorm(5,2,1e-3),w=c(0.1,0.2,0.3,0.35,0.05))
-      } else if(grepl(1,mix_ens, fixed = TRUE)){
-        K<-1
-        init_vals <- list(mu=rnorm(1,0.5,1e-3),nu=rnorm(1,2,1e-3),w=1.0)
-        dim(init_vals$mu) <- 1
-        dim(init_vals$nu) <- 1
-        dim(init_vals$w) <- 1
-        }
-  if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC1",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(replicate(K, TLP_results_s3$params))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC2",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(replicate(K, TLP_results_s3$params))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC3",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC2_results_s3$params[5],
-                                         BMC2_results_s3$params[7],
-                                         BMC2_results_s3$params[6],
-                                         BMC2_results_s3$params[8],
-                                         TLP_results_s3$params),
-                                       nrow=ncol(comp_forecasts3),ncol=3))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC4",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC3_results_s3$params[7],
-                                         BMC3_results_s3$params[10],
-                                         BMC3_results_s3$params[8],
-                                         BMC3_results_s3$params[11],
-                                         BMC3_results_s3$params[9],
-                                         BMC3_results_s3$params[12],
-                                         TLP_results_s3$params),
-                                       nrow=ncol(comp_forecasts3),ncol=4))
-  } else if(!(grepl(mix_ens,"EW",fixed = TRUE)) && grepl("BMC5",mix_ens,fixed = TRUE)){
-    init_vals[["omega_k"]] <- t(matrix(c(BMC4_results_s3$params[9],
-                                         BMC4_results_s3$params[13],
-                                         BMC4_results_s3$params[10],
-                                         BMC4_results_s3$params[14],
-                                         BMC4_results_s3$params[11],
-                                         BMC4_results_s3$params[15],
-                                         BMC4_results_s3$params[12],
-                                         BMC4_results_s3$params[16],
-                                         TLP_results_s3$params),
-                                       nrow=ncol(comp_forecasts3),ncol=5))
-  }
-  hyperpars <- list(rep(1.0,K),rep(1.0,ncol(comp_forecasts3)),rep(1/ncol(comp_forecasts3),ncol(comp_forecasts3)))
-  names(hyperpars) <- c("alpha_w","alpha_omega","omega_ew")
+# do 5-cv
+cv_s3 <- cv_wrapper(forecast_names[5:12],cv_list,comp_forecasts3,comp_pits3)
+# run selected mixture
+for(mix_ens in cv_s3$select){
   assign(paste0(mix_ens,"_results_s3"),
-         make_mix_ensemble(mix_ens,K,comp_forecasts3,comp_pits3, init_vals,hyperpars,ind_est, !ind_est))
-  }
+         mixture_wrapper(mix_ens, comp_forecasts3, comp_pits3,ind_est))
+}
 ```
 
 ```{r, include=FALSE}
 # Evaluation ------------------------------------------------------------------
-table3 <-make_table2(forecast_names[c(1:4)],"s3",comp_forecasts3)
-table31 <-make_table_bmc2(forecast_names[5:12],"s3")
-mls3 <- make_ls(forecast_names[1:12],"s3")
+cv_short3 <- cv_s3$cv_info %>%
+  dplyr::select("method","mean_train_ls","mean_valid_ls") %>%
+  distinct()
+mls3 <- make_ls(c(forecast_names[1:4],cv_s3$select),"s3")
+# make param table
+table3 <- make_table(c(forecast_names[1:4],cv_s3$select),3)
+# table31 <- table3 %>%
+#   dplyr::filter(Method %in% gsub("_", "-", c(cv_s3$select)))
 ```
 
 ```{r, fig.align="center",message=FALSE,warning=FALSE,fig.cap=""}
 # Overview over estimated parameters
-knitr::kable(list(table3,table31[,1:5]), "latex", booktabs = T, 
-             caption = "Model and Beta Mixing Weight Parameters",escape=FALSE) %>%
+knitr::kable(cv_short3, caption="Cross validation log scores for beta mixture methods")%>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(table31[,6:15], "latex", booktabs = T,caption = "Mixture Parameters",escape=FALSE) %>%
+# Overview over estimated parameters
+knitr::kable(table3[,c(1:5)], "latex", booktabs = T, caption = "Weight Parameters",escape=FALSE) %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(table31[,16:25], "latex", booktabs = T,caption = "Mixture Parameters",escape=FALSE) %>%
+
+knitr::kable(table3[,c(1,6:13)],
+             "latex", booktabs = T,caption = "Beta mixture parameters",escape=FALSE,row.names = NA)  %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
-knitr::kable(list(mls3[1:4,],mls3[5:12,]), "latex", booktabs = T,caption = "Log Score",escape=FALSE) %>%
+
+knitr::kable(table3[,c(1,14:ncol(table3))],
+             "latex", booktabs = T,caption = "Component weight parameters -",escape=FALSE,row.names = NA) %>%
+  kable_styling(font_size = 8, latex_options = "HOLD_position")
+
+knitr::kable(list(t(mls3)), "latex", booktabs = T,caption = "Log score",escape=FALSE) %>%
   kable_styling(font_size = 8, latex_options = "HOLD_position")
 ```
 
 \clearpage
 
-```{r,fig.align="center",fig.width=6, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
+```{r,fig.align="center",fig.width=6, fig.height=11,message=FALSE,warning=FALSE,fig.cap="Train PITs"}
 # PIT Histogramme
-plot_PITs(comp_pits3,forecast_names[1:12],"s3",train=TRUE)
+plot_PITs(comp_pits3,c(forecast_names[1:4],cv_s3$select),"s3",train=TRUE)
 ```
 
 \clearpage
 
-```{r,fig.align="center",fig.width=6, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
+```{r,fig.align="center",fig.width=6, fig.height=11,message=FALSE,warning=FALSE,fig.cap="Test PITs"}
 # PIT Histogramme
-plot_PITs(comp_pits3,forecast_names[1:12],"s3",train=FALSE)
+plot_PITs(comp_pits3,c(forecast_names[1:4],cv_s3$select),"s3",train=FALSE)
 ```
 
 \clearpage
 
-```{r,fig.align="center",fig.width=7, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
-# PDF
-plot_PDFs(Y,comp_forecasts3,forecast_names[1:12],"s3",c(0,1.2))
+```{r,fig.align="center",fig.width=8, fig.height=11,message=FALSE,warning=FALSE,fig.cap=""}
+# # PDF
+plot_PDFs(Y,comp_forecasts3,c(forecast_names[1:4],cv_s3$select),"s3",c(0,1.2))
 ```
 

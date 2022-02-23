@@ -5,7 +5,6 @@ date: "02/15/2021"
 header-includes:
    - \usepackage{booktabs}
    - \usepackage{tabularx}
-   - \usepackage{amssymb}
    - \usepackage{hyperref}
    - \usepackage{multicol}
    - \usepackage{longtable}
@@ -30,7 +29,6 @@ output:
 ```{r setup, include=FALSE}
 library(Matrix)
 library(tidyverse)
-library(tidyr)
 library(mixtools)
 library(knitr)
 library(rstan)
@@ -50,7 +48,7 @@ This markdown doesn't include BLP, EW-BLP since these can be done not using stan
 set.seed(1234)
 source("./applied_blp_sim_ver2.R")
 # -----------Scenario 0: Simulation setup -----------------------#
-n <- 2000
+n <- 1000
 forecast_names <- c("TLP", "BLP","EW", "EW-BLP",
                     "BMC2","EW-BMC2","BMC3","EW-BMC3",
                     "BMC4","EW-BMC4","BMC5","EW-BMC5")
@@ -137,8 +135,7 @@ EW_BLP_params <- make_ensemble("EW-BLP", K=1,M=M, ind_est, Y, comp_binned_foreca
                                hyperpars=NULL)
 
 # experimental vanilla mixture
-#for(i in 2:5){
-for(i in 4:5){
+for(i in 2:5){
   K<- i
   w_vec_inits <- sample.int(100, size = K, replace = FALSE)
   init_vals_ew <- list(alpha=rnorm(K,1,1e-3),beta=rnorm(K,1,1e-3),w=w_vec_inits/sum(w_vec_inits))
@@ -170,9 +167,10 @@ for(i in 4:5){
 #          )
 # }
 
-# params_list <- list(BLP_params, EW_BLP_params, BMC2_params, BMC3_params, BMC4_params,BMC5_params,
-#                     `EW-BMC2_params`, `EW-BMC3_params`, `EW-BMC4_params`, `EW-BMC5_params`)
-# save(params_list, file="./Renvir/run2.RData")
+params_list <- list(BLP_params, EW_BLP_params, TLP_params,
+                    BM2_params, BM3_params, BM4_params,BM5_params,
+                    EW_BM2_params, EW_BM3_params, EW_BM4_params, EW_BM5_params)
+save(params_list, file="./Renvir/run5.RData")
 ```
 
 ```{r, include=FALSE}
@@ -187,4 +185,22 @@ for(i in 1:M){
 }
 
 #### add ensemble results once we get the parameters
+```
+
+```{r, include=FALSE}
+loadRData <- function(fileName){
+#loads an RData file, and returns it
+    load(fileName)
+    get(ls()[ls() != "fileName"])
+}
+for (i in 1:5){
+  assign(paste0("params_run_",i),
+         loadRData(paste0("./Renvir/run",i,".Rdata")))
+}
+
+### plot
+
+
+
+
 ```
