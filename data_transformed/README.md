@@ -1,5 +1,6 @@
-# Forecast Calibration
-Code and outputs for Nutcha Wattanachit, Evan L. Ray, Thomas C. McAndrew, Nicholas G. Reich, "Comparison of Combination Methods to Create Calibrated Ensemble Forecasts for Seasonal Influenza in the U.S.", 2022.
+# Data folder structure
 
-# Instructions
-Each folder contains a readme file with instructions for how to produce results in the article. Please start in the following order: `data_code`, `ensemble_code`, `plot_calibeation.Rmd`.
+Prior to running scripts in `data_code`, 
+
+1) unzip all zip files in this folder
+2) The `cdf` folder has is empty, but contain multiple subfolders needed to store data created from scripts in this repository.
